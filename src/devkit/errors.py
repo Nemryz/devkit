@@ -33,3 +33,7 @@ class ErrorClave(ErrorBase):
 
 class ErrorLimpieza(ErrorBase):
     pass
+
+
+class ErrorDuplicados(ErrorBase):
+    pass

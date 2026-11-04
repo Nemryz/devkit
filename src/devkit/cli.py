@@ -10,6 +10,7 @@ from devkit import __version__
 from devkit.core.output import emitir
 from devkit.errors import ErrorBase
 from devkit.tools import backup as modulo_respaldo
+from devkit.tools import dedupe as modulo_dedupe
 from devkit.tools import trim as modulo_trim
 from devkit.tools.doctor import ejecutar_doctor
 
@@ -28,6 +29,11 @@ app_trim = typer.Typer(
     help='Limpieza de caches con plan previo y papelera de Windows.',
 )
 app.add_typer(app_trim, name='trim')
+app_dedupe = typer.Typer(
+    no_args_is_help=True,
+    help='Duplicados exactos con BLAKE3, plan previo y papelera de Windows.',
+)
+app.add_typer(app_dedupe, name='dedupe')
 
 
 def mostrar_version(valor: bool) -> None:
@@ -233,6 +239,56 @@ def comando_trim_aplicar(
         resultado = modulo_trim.aplicar_trim(raiz, incluir_venv, edad_dias)
     except ErrorBase as fallo:
         salir_con_error('trim aplicar', fallo, formato)
+        return
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
+
+
+@app_dedupe.command('escanear')
+def comando_dedupe_escanear(
+    raiz: Path = typer.Argument(..., help='Carpeta que se quiere escanear.'),
+    edad_dias: int = typer.Option(30, '--edad-dias', help='Solo archivos mas viejos.'),
+    no_ignorar_onedrive: bool = typer.Option(
+        False,
+        '--no-ignorar-onedrive',
+        help='Permite entrar en rutas de OneDrive.',
+    ),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Genera el plan en solo lectura y lo muestra sin tocar el disco.
+    try:
+        ignorar = not no_ignorar_onedrive
+        resultado = modulo_dedupe.escanear_dedupe(raiz, edad_dias, ignorar)
+    except ErrorBase as fallo:
+        salir_con_error('dedupe escanear', fallo, formato)
+        return
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
+
+
+@app_dedupe.command('aplicar')
+def comando_dedupe_aplicar(
+    raiz: Path = typer.Argument(..., help='Carpeta que se quiere deduplicar.'),
+    edad_dias: int = typer.Option(30, '--edad-dias', help='Solo archivos mas viejos.'),
+    no_ignorar_onedrive: bool = typer.Option(
+        False,
+        '--no-ignorar-onedrive',
+        help='Permite entrar en rutas de OneDrive.',
+    ),
+    forzar: bool = typer.Option(
+        False, '--forzar', help='Aplica el plan moviendo a la papelera de Windows.'
+    ),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Solo mueve a papelera cuando el usuario acepta con --forzar.
+    if not forzar:
+        typer.echo('sin --forzar no se aplica el plan, usa dedupe escanear', err=True)
+        raise typer.Exit(code=2)
+    try:
+        ignorar = not no_ignorar_onedrive
+        resultado = modulo_dedupe.aplicar_dedupe(raiz, edad_dias, ignorar)
+    except ErrorBase as fallo:
+        salir_con_error('dedupe aplicar', fallo, formato)
         return
     emitir(resultado, formato=formato)
     raise typer.Exit(code=resultado['codigo'])

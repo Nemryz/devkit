@@ -13,6 +13,8 @@ dependencies = [
   'psutil>=6.0',
   'pydantic>=2.13',
   'orjson>=3.11',
+  'blake3>=1.0',
+  'send2trash>=1.8',
 ]
 
 [project.optional-dependencies]

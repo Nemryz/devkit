@@ -29,6 +29,9 @@ def imprimir_tabla(datos: dict) -> None:
     tabla.add_column('Detalle')
     for fila in datos.get('comprobaciones') or datos.get('bloques') or []:
         tabla.add_row(str(fila['nombre']), str(fila['estado']), str(fila['detalle']))
+    if not (datos.get('comprobaciones') or datos.get('bloques')) and datos.get('accion'):
+        accion = str(datos.get('accion', ''))
+        tabla.add_row(accion, str(datos.get('estado', '')), str(datos.get('detalle', '')))
     CONSOLA.print(tabla)
     estado = datos.get('estado', 'desconocido')
     CONSOLA.print(f'estado general {estado}')

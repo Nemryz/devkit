@@ -11,6 +11,7 @@ from devkit.core.output import emitir
 from devkit.errors import ErrorBase
 from devkit.tools import backup as modulo_respaldo
 from devkit.tools import dedupe as modulo_dedupe
+from devkit.tools import nice as modulo_nice
 from devkit.tools import trim as modulo_trim
 from devkit.tools.doctor import ejecutar_doctor
 from devkit.tools.health import ejecutar_salud
@@ -35,6 +36,11 @@ app_dedupe = typer.Typer(
     help='Duplicados exactos con BLAKE3, plan previo y papelera de Windows.',
 )
 app.add_typer(app_dedupe, name='dedupe')
+app_nice = typer.Typer(
+    no_args_is_help=True,
+    help='Ejecuta hijos con prioridad baja y registro de memoria.',
+)
+app.add_typer(app_nice, name='nice')
 
 
 def mostrar_version(valor: bool) -> None:
@@ -95,6 +101,30 @@ def comando_health(
 ) -> None:
     # Ejecuta el informe de salud y traduce el estado a codigo de salida.
     resultado = ejecutar_salud(sys.argv[1:])
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
+
+
+@app_nice.command('ejecutar')
+def comando_nice_ejecutar(
+    comando: list[str] = typer.Argument(
+        ..., help='Comando y argumentos. Separa con -- antes de las opciones del hijo.'
+    ),
+    prioridad: str = typer.Option('bajo', '--prioridad', help='Prioridad del hijo.'),
+    tiempo: float = typer.Option(3600.0, '--tiempo', help='Tiempo maximo en segundos.'),
+    memoria_mb: int | None = typer.Option(
+        None, '--memoria-mb', help='Limite aproximado en MB.'
+    ),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Envuelve el hijo con prioridad en bajo y un tiempo maximo dado.
+    try:
+        resultado = modulo_nice.ejecutar_nice(
+            comando, prioridad, tiempo, memoria_mb
+        )
+    except ErrorBase as fallo:
+        salir_con_error('nice ejecutar', fallo, formato)
+        return
     emitir(resultado, formato=formato)
     raise typer.Exit(code=resultado['codigo'])
 

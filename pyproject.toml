@@ -1,0 +1,49 @@
+[build-system]
+requires = ['hatchling']
+build-backend = 'hatchling.build'
+
+[project]
+name = 'devkit'
+version = '0.1.0'
+description = 'Herramientas internas de mantenimiento para Windows'
+requires-python = '>=3.12'
+dependencies = [
+  'typer>=0.27',
+  'rich>=15.0',
+  'psutil>=6.0',
+  'pydantic>=2.13',
+  'orjson>=3.11',
+]
+
+[project.optional-dependencies]
+fs = ['send2trash>=1.8']
+docs = ['pymupdf>=1.28', 'python-docx>=1.2', 'ebooklib>=0.20', 'readability-lxml>=0.9']
+ocr = ['pytesseract>=0.3', 'pillow>=12.0']
+data = ['pandas>=2.3', 'pyarrow>=26.0']
+
+[project.scripts]
+dev = 'devkit.cli:main'
+
+[dependency-groups]
+dev = ['pytest>=9.0', 'pytest-cov>=7.0', 'ruff>=0.16', 'mypy>=1.19']
+
+[tool.hatch.build.targets.wheel]
+packages = ['src/devkit']
+
+[tool.ruff]
+line-length = 100
+target-version = 'py312'
+src = ['src']
+
+[tool.ruff.lint]
+select = ['E', 'F', 'I', 'N', 'W', 'UP', 'B', 'SIM']
+
+[tool.pytest.ini_options]
+testpaths = ['tests']
+addopts = '-q --strict-markers'
+pythonpath = ['src']
+
+[tool.mypy]
+python_version = '3.12'
+files = ['src']
+warn_unused_ignores = true

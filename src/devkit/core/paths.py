@@ -50,6 +50,11 @@ def ruta_journal() -> Path:
     return directorio_journal() / 'ejecuciones.jsonl'
 
 
+def directorio_respaldos() -> Path:
+    # Los respaldos viven junto al estado hasta que exista un volumen secundario.
+    return directorio_estado() / 'backups'
+
+
 def asegurar_directorio(ruta: Path) -> Path:
     # Crea la carpeta si falta y devuelve la misma ruta para encadenar llamadas.
     ruta.mkdir(parents=True, exist_ok=True)

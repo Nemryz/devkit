@@ -1,5 +1,5 @@
 # Excepciones propias para que cada fallo tenga un mensaje claro y un codigo estable.
-class ErrorBase(Exception):  # noqa: N818
+class ErrorBase(Exception):
     codigo = 2
 
 
@@ -21,3 +21,11 @@ class ErrorRuta(ErrorBase):
 
 class ErrorSoloLectura(ErrorBase):
     codigo = 4
+
+
+class ErrorRespaldo(ErrorBase):
+    pass
+
+
+class ErrorClave(ErrorBase):
+    pass

@@ -29,3 +29,7 @@ class ErrorRespaldo(ErrorBase):
 
 class ErrorClave(ErrorBase):
     pass
+
+
+class ErrorLimpieza(ErrorBase):
+    pass

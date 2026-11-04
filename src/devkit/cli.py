@@ -10,6 +10,7 @@ from devkit import __version__
 from devkit.core.output import emitir
 from devkit.errors import ErrorBase
 from devkit.tools import backup as modulo_respaldo
+from devkit.tools import trim as modulo_trim
 from devkit.tools.doctor import ejecutar_doctor
 
 app = typer.Typer(
@@ -22,6 +23,11 @@ app_backup = typer.Typer(
     help='Respaldos cifrados con manifiesto de hashes y verificacion.',
 )
 app.add_typer(app_backup, name='backup')
+app_trim = typer.Typer(
+    no_args_is_help=True,
+    help='Limpieza de caches con plan previo y papelera de Windows.',
+)
+app.add_typer(app_trim, name='trim')
 
 
 def mostrar_version(valor: bool) -> None:
@@ -183,6 +189,50 @@ def comando_backup_listar(
         resultado = modulo_respaldo.listar_respaldos(destino)
     except ErrorBase as fallo:
         salir_con_error('backup listar', fallo, formato)
+        return
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
+
+
+@app_trim.command('escanear')
+def comando_trim_escanear(
+    raiz: Path = typer.Argument(..., help='Carpeta que se quiere escanear.'),
+    incluir_venv: bool = typer.Option(
+        False, '--incluir-venv', help='Incluye la carpeta .venv en el plan.'
+    ),
+    edad_dias: int = typer.Option(7, '--edad-dias', help='Solo incluye elementos viejos.'),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Genera el plan en solo lectura y lo muestra sin tocar el disco.
+    try:
+        resultado = modulo_trim.escanear_trim(raiz, incluir_venv, edad_dias)
+    except ErrorBase as fallo:
+        salir_con_error('trim escanear', fallo, formato)
+        return
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
+
+
+@app_trim.command('aplicar')
+def comando_trim_aplicar(
+    raiz: Path = typer.Argument(..., help='Carpeta que se quiere limpiar.'),
+    incluir_venv: bool = typer.Option(
+        False, '--incluir-venv', help='Incluye la carpeta .venv en el plan.'
+    ),
+    edad_dias: int = typer.Option(7, '--edad-dias', help='Solo limpia elementos viejos.'),
+    forzar: bool = typer.Option(
+        False, '--forzar', help='Aplica el plan moviendo a la papelera de Windows.'
+    ),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Solo mueve a papelera cuando el usuario acepta con --forzar.
+    if not forzar:
+        typer.echo('sin --forzar no se aplica el plan, usa trim escanear', err=True)
+        raise typer.Exit(code=2)
+    try:
+        resultado = modulo_trim.aplicar_trim(raiz, incluir_venv, edad_dias)
+    except ErrorBase as fallo:
+        salir_con_error('trim aplicar', fallo, formato)
         return
     emitir(resultado, formato=formato)
     raise typer.Exit(code=resultado['codigo'])

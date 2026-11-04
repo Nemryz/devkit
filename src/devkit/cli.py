@@ -13,6 +13,7 @@ from devkit.tools import backup as modulo_respaldo
 from devkit.tools import dedupe as modulo_dedupe
 from devkit.tools import trim as modulo_trim
 from devkit.tools.doctor import ejecutar_doctor
+from devkit.tools.health import ejecutar_salud
 
 app = typer.Typer(
     add_completion=False,
@@ -84,6 +85,16 @@ def comando_doctor(
 ) -> None:
     # Ejecuta el diagnostico y traduce el estado a un codigo de salida.
     resultado = ejecutar_doctor(sys.argv[1:])
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
+
+
+@app.command('health')
+def comando_health(
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Ejecuta el informe de salud y traduce el estado a codigo de salida.
+    resultado = ejecutar_salud(sys.argv[1:])
     emitir(resultado, formato=formato)
     raise typer.Exit(code=resultado['codigo'])
 

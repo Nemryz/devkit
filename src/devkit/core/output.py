@@ -22,12 +22,12 @@ def imprimir_json(datos: Any) -> None:
 
 
 def imprimir_tabla(datos: dict) -> None:
-    # Resume las comprobaciones del doctor en una tabla legible por personas.
+    # Resume el resultado en una tabla legible por personas.
     tabla = Table(title=str(datos.get('herramienta', 'devkit')))
-    tabla.add_column('Comprobacion')
+    tabla.add_column('Bloque')
     tabla.add_column('Estado')
     tabla.add_column('Detalle')
-    for fila in datos.get('comprobaciones', []):
+    for fila in datos.get('comprobaciones') or datos.get('bloques') or []:
         tabla.add_row(str(fila['nombre']), str(fila['estado']), str(fila['detalle']))
     CONSOLA.print(tabla)
     estado = datos.get('estado', 'desconocido')

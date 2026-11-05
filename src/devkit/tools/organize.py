@@ -175,8 +175,16 @@ def construir_plan(raiz: Path, destino: Path, archivos: list[Path]) -> dict:
     total_bytes = sum(
         Path(a['origen']).stat().st_size for a in acciones if Path(a['origen']).exists()
     )
+    manifest = []
+    for a in acciones:
+        ruta = Path(a['origen'])
+        tamano = ruta.stat().st_size if ruta.exists() else 0
+        manifest.append(
+            {'origen': a['origen'], 'destino': a['destino'], 'tipo': 'mover', 'tamano': tamano}
+        )
     return {
         'acciones': acciones,
+        'manifest': manifest,
         'total': len(acciones),
         'total_bytes': total_bytes,
         'por_tipo': dict(sorted(por_tipo.items())),

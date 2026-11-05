@@ -146,8 +146,13 @@ def construir_plan(candidatos: list[dict], tope: int = TOPE_BYTES) -> dict:
             continue
         seleccion.append(candidato)
         total += candidato['tamano']
+    acciones = [
+        {'origen': a['ruta'], 'destino': '', 'tipo': 'papelera', 'tamano': a['tamano']}
+        for a in seleccion
+    ]
     return {
         'acciones': seleccion,
+        'manifest': acciones,
         'total': len(seleccion),
         'total_bytes': total,
         'omitidos': len(ordenados) - len(seleccion),
@@ -155,7 +160,8 @@ def construir_plan(candidatos: list[dict], tope: int = TOPE_BYTES) -> dict:
 
 
 def _mover_a_papelera(ruta: Path) -> None:
-    # send2trash es la unica escritura destructiva y siempre es reversible.
+    # La unica escritura destructiva pasa por send2trash tras verificar lectura.
+    # En tests se hace monkeypatch sobre esta funcion, por eso se mantiene.
     import send2trash
 
     try:
@@ -171,6 +177,11 @@ def escanear_trim(raiz: Path, incluir_venv: bool = False, edad_dias: int = 7) ->
     candidatos = escanear(base, incluir_venv, edad_dias)
     plan = construir_plan(candidatos)
     runlog.registrar_ejecucion('trim', ['escanear'], inicio, 0, 0, 'escanear')
+    # Guarda el manifiesto persistente para aplicar sin reescanear en Bloque D.
+    from devkit.core import runlog as _rl
+
+    id_ejec = _rl.iniciar_ejecucion('trim', 'escanear')
+    ruta_plan = safety.guardar_plan(id_ejec, 'trim', plan['manifest'])
     return {
         'herramienta': 'trim',
         'accion': 'escanear',
@@ -181,17 +192,42 @@ def escanear_trim(raiz: Path, incluir_venv: bool = False, edad_dias: int = 7) ->
         'total_bytes': plan['total_bytes'],
         'omitidos': plan['omitidos'],
         'acciones': plan['acciones'],
+        'plan_persistente': str(ruta_plan),
         'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
     }
 
 
 def aplicar_trim(raiz: Path, incluir_venv: bool = False, edad_dias: int = 7) -> dict:
     # Ejecuta el plan moviendo cada candidato a la papelera de Windows.
+    # En Bloque D se valida contra el manifiesto persistente sin reescanear.
     safety.verificar_escritura('limpiar caches')
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
     candidatos = escanear(base, incluir_venv, edad_dias)
     plan = construir_plan(candidatos)
+    from devkit.core import runlog as _rl
+
+    id_ejec = _rl.iniciar_ejecucion('trim', 'aplicar')
+    ruta_plan = safety.guardar_plan(id_ejec, 'trim', plan['manifest'])
+    validacion = safety._validar_arbol(plan)
+    if validacion:
+        estado = 'error'
+        codigo = 2
+        runlog.registrar_ejecucion('trim', ['aplicar'], inicio, codigo, 0, estado)
+        return {
+            'herramienta': 'trim',
+            'accion': 'aplicar',
+            'estado': estado,
+            'codigo': codigo,
+            'raiz': str(base),
+            'total_movidos': 0,
+            'total_bytes': 0,
+            'movidos': [],
+            'fallidos': validacion,
+            'plan_persistente': str(ruta_plan),
+            'fecha': datetime.now(UTC).isoformat(),
+            'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
+        }
     movidos = []
     fallidos = []
     for accion in plan['acciones']:

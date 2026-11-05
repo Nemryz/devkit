@@ -15,19 +15,28 @@ EXTENSIONES_DOC = EXTENSIONES_IMAGEN | {'.pdf'}
 
 
 def _tesseract() -> str | None:
-    # Devuelve la ruta de tesseract.exe en su ubicacion habitual de Windows.
+    # Devuelve la ruta de tesseract.exe si existe y responde.
     import shutil
+    import subprocess
 
     ruta = shutil.which('tesseract')
     if ruta:
-        return ruta
+        try:
+            subprocess.run([ruta, '--version'], capture_output=True, timeout=10)
+            return ruta
+        except (OSError, subprocess.TimeoutExpired):
+            pass
     candidatos = (
         r'C:\Program Files\Tesseract-OCR\tesseract.exe',
         r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
     )
     for candidato in candidatos:
         if Path(candidato).is_file():
-            return candidato
+            try:
+                subprocess.run([candidato, '--version'], capture_output=True, timeout=10)
+                return candidato
+            except (OSError, subprocess.TimeoutExpired):
+                pass
     return None
 
 

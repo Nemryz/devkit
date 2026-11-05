@@ -43,6 +43,7 @@ def ejecutar_nice(
     error = ''
     pico = 0
     detalle = 'error'
+    hijo = None
     try:
         hijo = subprocess.Popen(
             validado,
@@ -55,24 +56,45 @@ def ejecutar_nice(
         try:
             proceso._aplicar_prioridad(hijo.pid, prioridad)
         except psutil.Error as fallo:
+            # Si falla la prioridad, matar al hijo para no dejarlo huerfano.
+            with suppress(Exception):
+                hijo.kill()
             detalle_prioridad = f'no se pudo aplicar la prioridad {prioridad} porque {fallo}'
             raise ErrorProceso(detalle_prioridad) from fallo
         if job is not None:
             job.asignar(hijo.pid)
-        salida, error = hijo.communicate(timeout=timeout)
+        # Mide el pico mientras el hijo corre, no solo al final.
+        import threading
+
+        pico_ref = {'valor': 0}
+        detenido = threading.Event()
+
+        def _medir():
+            while not detenido.wait(0.05):
+                try:
+                    memoria = psutil.Process(hijo.pid).memory_info().rss
+                except psutil.Error:
+                    try:
+                        memoria = psutil.Process(hijo.pid).memory_full_info().uss
+                    except psutil.Error:
+                        memoria = 0
+                if memoria > pico_ref['valor']:
+                    pico_ref['valor'] = int(memoria)
+
+        hilo = threading.Thread(target=_medir, daemon=True)
+        hilo.start()
+        try:
+            salida, error = hijo.communicate(timeout=timeout)
+        finally:
+            detenido.set()
+            hilo.join(timeout=1.0)
         codigo = hijo.returncode
         detalle = f'codigo {codigo}'
-        try:
-            memoria = psutil.Process(hijo.pid).memory_info().rss
-        except psutil.Error:
-            try:
-                memoria = psutil.Process(hijo.pid).memory_full_info().uss
-            except psutil.Error:
-                memoria = 0
-        pico = int(memoria)
+        pico = max(pico_ref['valor'], 0)
     except subprocess.TimeoutExpired:
-        with suppress(NameError):
+        if hijo is not None:
             hijo.kill()
+            hijo.communicate()
         codigo = 124
         detalle = 'tiempo maximo superado'
         error = f'supero {timeout} segundos'

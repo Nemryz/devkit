@@ -85,10 +85,45 @@ class _InfosLimite:
         self.instancia = extend
 
 
-def crear_job_limite(memoria_maxima: int | None) -> _LimiteJob | None:
-    # Crea el Job Object con limite de memoria activa en bytes.
-    if not memoria_maxima or memoria_maxima < 0:
-        return None
+class _InfosLimite:
+    # Estructuras Win32 para fijar el limite en JOBOBJECT extended.
+
+    def __init__(self):
+        import ctypes as c
+
+        class LimitInfo(c.Structure):
+            _fields_ = [
+                ('PerProcessUserTimeLimit', c.c_int64),
+                ('PerJobUserTimeLimit', c.c_int64),
+                ('LimitFlags', c.c_uint32),
+                ('MinimumWorkingSetSize', c.c_size_t),
+                ('MaximumWorkingSetSize', c.c_size_t),
+                ('ActiveProcessLimit', c.c_uint32),
+                ('Affinity', c.c_uint64),
+                ('PriorityClass', c.c_uint32),
+                ('SchedulingClass', c.c_uint32),
+            ]
+
+        class Extend(c.Structure):
+            _fields_ = [
+                ('BasicLimitInformation', LimitInfo),
+                ('IoInfo', c.c_int64 * 3),
+                ('ProcessMemoryLimit', c.c_size_t),
+                ('JobMemoryLimit', c.c_size_t),
+                ('PeakProcessMemoryUsed', c.c_size_t),
+                ('PeakJobMemoryUsed', c.c_size_t),
+                ('UiRestrictionsClass', c.c_uint32),
+                ('__relleno', c.c_uint32),
+            ]
+
+        limite = LimitInfo()
+        limite.LimitFlags = 0x10000000
+        extend = Extend()
+        extend.BasicLimitInformation = limite
+        self.instancia = extend
+
+
+def _hacer_job_limite(memoria_maxima: int | None) -> _LimiteJob | None:
     import ctypes as c
 
     if not hasattr(c, 'windll'):
@@ -104,11 +139,18 @@ def crear_job_limite(memoria_maxima: int | None) -> _LimiteJob | None:
     infos = _InfosLimite()
     infos.instancia.JobMemoryLimit = memoria_maxima
     extend = infos.instancia
-    resultado = kernel.SetInformationJobObject(job, 9, c.addressof(extend), c.sizeof(extend))
-    if not resultado:
-        # El kernel devuelve 24 con estructuras Win32 complejas, asi que no aplica el limite.
-        pass
+    ok = kernel.SetInformationJobObject(job, 9, c.addressof(extend), c.sizeof(extend))
+    if not ok:
+        kernel.CloseHandle(job)
+        return None
     return _LimiteJob(job)
+
+
+def crear_job_limite(memoria_maxima: int | None) -> _LimiteJob | None:
+    # Crea el Job Object con limite de memoria activa en bytes.
+    if not memoria_maxima or memoria_maxima < 0:
+        return None
+    return _hacer_job_limite(memoria_maxima)
 
 
 def _aplicar_prioridad(pid: int, prioridad: str) -> None:

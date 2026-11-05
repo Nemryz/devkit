@@ -82,7 +82,7 @@ def bateria() -> dict:
 
     datos_bateria = psutil.sensors_battery()
     if datos_bateria is None:
-        return _resultado('bateria', 'ok', 'sin bateria instalada', None)
+        return _resultado('bateria', 'unknown', 'sin bateria instalada', None)
     porcentaje = round(datos_bateria.percent, 1)
     conectado = bool(datos_bateria.power_plugged)
     estado = 'aviso' if porcentaje < 20 and not conectado else 'ok'
@@ -93,7 +93,11 @@ def bateria() -> dict:
 
 def temperatura() -> dict:
     # La temperatura no esta expuesta por WMI sin administrador en este equipo.
-    return _resultado('temperatura', 'ok', 'no disponible sin administrador', None)
+    return _resultado('temperatura', 'unknown', 'no disponible sin administrador', None)
+
+
+def _resultado_unknown(nombre: str, detalle: str) -> dict:
+    return _resultado(nombre, 'unknown', detalle, None)
 
 
 def smart() -> dict:
@@ -101,11 +105,11 @@ def smart() -> dict:
     try:
         resultado = _hijo(['wmic', 'diskdrive', 'get', 'Status,Model,Size', '/format:csv'])
     except FileNotFoundError:
-        return _resultado('smart', 'ok', 'wmic no disponible', None)
+        return _resultado('smart', 'unknown', 'wmic no disponible', None)
     except subprocess.TimeoutExpired:
-        return _resultado('smart', 'aviso', 'tardo al consultar SMART', None)
+        return _resultado('smart', 'unknown', 'tardo al consultar SMART', None)
     if resultado.returncode != 0:
-        return _resultado('smart', 'ok', 'no se pudo consultar SMART', None)
+        return _resultado('smart', 'unknown', 'no se pudo consultar SMART', None)
     lineas = [linea for linea in resultado.stdout.splitlines() if linea.strip()]
     discos = [] if len(lineas) < 3 else lineas[1:]
     valor = discos[0] if discos else 'sin datos'
@@ -119,18 +123,18 @@ def defender() -> dict:
     try:
         resultado = _hijo(comando)
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        return _resultado('defender', 'ok', 'powershell no disponible', None)
+        return _resultado('defender', 'unknown', 'powershell no disponible', None)
     if resultado.returncode != 0:
-        return _resultado('defender', 'ok', 'no se pudo consultar Defender', None)
+        return _resultado('defender', 'unknown', 'no se pudo consultar Defender', None)
     texto = resultado.stdout.strip()
     if not texto:
-        return _resultado('defender', 'ok', 'sin respuesta de Defender', None)
+        return _resultado('defender', 'unknown', 'sin respuesta de Defender', None)
     import json
 
     try:
         datos = json.loads(texto)
     except json.JSONDecodeError:
-        return _resultado('defender', 'ok', 'respuesta no parseable', texto[:80])
+        return _resultado('defender', 'unknown', 'respuesta no parseable', texto[:80])
     activo = datos.get('AntivirusEnabled')
     estado = 'ok' if activo else 'aviso'
     detalle = 'Defender activo' if activo else 'Defender desactivado'
@@ -147,14 +151,13 @@ def actualizaciones() -> dict:
     try:
         import winreg
     except ImportError:
-        return _resultado('actualizaciones', 'ok', 'sin winreg en este Python', None)
+        return _resultado('actualizaciones', 'unknown', 'sin winreg en este Python', None)
     ruta = r'SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\Results\Install'
     try:
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, ruta) as clave:
             valor, _ = winreg.QueryValueEx(clave, 'LastSuccessTime')
     except OSError as fallo:
-        # Sin privilegio de lectura en este equipo no es un error de salud.
-        return _resultado('actualizaciones', 'ok', f'sin acceso al registro {fallo}', None)
+        return _resultado('actualizaciones', 'unknown', f'sin acceso al registro {fallo}', None)
     return _resultado('actualizaciones', 'ok', f'ultima actualizacion {valor}', valor)
 
 
@@ -163,7 +166,7 @@ def inicio() -> dict:
     try:
         import winreg
     except ImportError:
-        return _resultado('inicio', 'ok', 'sin winreg en este Python', None)
+        return _resultado('inicio', 'unknown', 'sin winreg en este Python', None)
     ruta_hku = r'Software\Microsoft\Windows\CurrentVersion\Run'
     total = 0
     for raiz in (winreg.HKEY_CURRENT_USER,):
@@ -186,18 +189,18 @@ def eventos() -> dict:
     try:
         resultado = _hijo(comando, tiempo=30.0)
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        return _resultado('eventos', 'ok', 'powershell no disponible', None)
+        return _resultado('eventos', 'unknown', 'powershell no disponible', None)
     if resultado.returncode != 0:
-        return _resultado('eventos', 'ok', 'no se pudo leer el registro', None)
+        return _resultado('eventos', 'unknown', 'no se pudo leer el registro', None)
     texto = resultado.stdout.strip()
     if not texto:
-        return _resultado('eventos', 'ok', 'sin errores recientes', 0)
+        return _resultado('eventos', 'unknown', 'sin errores recientes', 0)
     import json
 
     try:
         datos = json.loads(texto)
     except json.JSONDecodeError:
-        return _resultado('eventos', 'ok', 'respuesta no parseable', None)
+        return _resultado('eventos', 'unknown', 'respuesta no parseable', None)
     conteo = 1 if isinstance(datos, dict) else len(datos) if isinstance(datos, list) else 0
     estado = 'aviso' if conteo >= 3 else 'ok'
     return _resultado('eventos', estado, f'{conteo} errores recientes', conteo)

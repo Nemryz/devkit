@@ -31,4 +31,4 @@ def test_health_sin_administrador_no_falla(estado_temporal):
     assert resultado.exit_code in (0, 1, 2)
     datos = json.loads(resultado.stdout)
     for fila in datos['bloques']:
-        assert fila['estado'] in ('ok', 'aviso', 'error')
+        assert fila['estado'] in ('ok', 'aviso', 'error', 'unknown')

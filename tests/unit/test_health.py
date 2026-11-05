@@ -33,41 +33,41 @@ def test_disco_devuelve_numeros_reales():
 def test_bateria_responde_sin_error():
     resultado = health.bateria()
     assert resultado['nombre'] == 'bateria'
-    assert resultado['estado'] in ('ok', 'aviso', 'error')
+    assert resultado['estado'] in ('ok', 'aviso', 'error', 'unknown')
 
 
-def test_temperatura_sin_administrador_es_ok():
-    assert health.temperatura()['estado'] == 'ok'
+def test_temperatura_sin_administrador_es_unknown():
+    assert health.temperatura()['estado'] == 'unknown'
 
 
 def test_smart_responde_sin_administrador():
     resultado = health.smart()
     assert resultado['nombre'] == 'smart'
-    assert resultado['estado'] in ('ok', 'aviso')
+    assert resultado['estado'] in ('ok', 'aviso', 'unknown')
 
 
 def test_defender_responde_sin_administrador():
     resultado = health.defender()
     assert resultado['nombre'] == 'defender'
-    assert resultado['estado'] in ('ok', 'aviso')
+    assert resultado['estado'] in ('ok', 'aviso', 'unknown')
 
 
 def test_actualizaciones_responde():
     resultado = health.actualizaciones()
     assert resultado['nombre'] == 'actualizaciones'
-    assert resultado['estado'] in ('ok', 'aviso', 'error')
+    assert resultado['estado'] in ('ok', 'aviso', 'error', 'unknown')
 
 
 def test_inicio_responde():
     resultado = health.inicio()
     assert resultado['nombre'] == 'inicio'
-    assert resultado['estado'] in ('ok', 'aviso')
+    assert resultado['estado'] in ('ok', 'aviso', 'unknown')
 
 
 def test_eventos_responde():
     resultado = health.eventos()
     assert resultado['nombre'] == 'eventos'
-    assert resultado['estado'] in ('ok', 'aviso')
+    assert resultado['estado'] in ('ok', 'aviso', 'unknown')
 
 
 def test_ejecutar_salud_tiene_nueve_bloques(estado_temporal):

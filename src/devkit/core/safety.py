@@ -25,7 +25,7 @@ def verificar_escritura(accion: str) -> None:
         raise ErrorSoloLectura(f'el modo de solo lectura impide {accion}')
 
 
-# --- Planes persistentes (Bloque D) ---
+# Planes persistentes con firma, validacion del arbol y estados del manifiesto.
 
 
 def firmar_plan(acciones: list[dict]) -> str:

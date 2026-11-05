@@ -59,7 +59,7 @@ Para desarrollo (editable):
 ### Reinstalar o actualizar
 
 ```powershell
-cd %USERPROFILE%\Projects\devkit
+cd <ruta-del-repositorio>
 uv tool install --editable . --force
 ```
 
@@ -138,7 +138,14 @@ dev organize aplicar --todos C:\Descargas
 dev organize aplicar --por-archivo C:\Descargas
 ```
 
-Detecta el tipo real por magic number (JPEG, PNG, PDF, ZIP, MP3, MP4, etc.) y cae a la extensión si no hay firma. Organiza en `Organizados/<año>/<tipo>/<nombre>`. Resuelve colisiones con `_2`, `_3`. El plan incluye manifiesto firmado.
+Detecta el tipo real por magic number (JPEG, PNG, PDF, ZIP, MP3, MP4, etc.) y cae a la extensión si no hay firma. Organiza en `Organizados/<año>/<tipo>/<nombre>`. Resuelve colisiones con `_2`, `_3`. El plan incluye manifiesto firmado con origen, destino, tamaño y mtime.
+
+Para aplicar un manifiesto ya guardado sin reescanear el árbol:
+
+```powershell
+dev organize plan C:\Descargas
+dev organize aplicar --todos C:\Descargas --plan <ruta-del-manifiesto>.json
+```
 
 ### idea
 
@@ -165,7 +172,7 @@ dev index actualizar C:\FutureProjects\notas
 dev index exportar C:\FutureProjects\export.json --raiz C:\FutureProjects\notas
 ```
 
-Construye un índice FTS5 (tokenize unicode61) sobre título y cuerpo en `<raiz>/.devkit/index.sqlite`. Permite buscar con fragmentos resaltados. Actualiza de forma incremental por mtime. Exporta a JSON. Buscar sin `--raiz` usa el índice del directorio actual.
+Construye un índice FTS5 (tokenize unicode61) sobre título y cuerpo en `<raiz>/.devkit/index.sqlite`. Permite buscar con fragmentos resaltados. Actualiza de forma incremental por mtime. Exporta a JSON. La raíz del índice se resuelve por precedencia: `--raiz` explícito > variable `DEVKIT_WORKSPACE` > directorio actual. Si no existe el índice en esa raíz, avisa con `ejecuta index construir` y no consulta ningún índice global de forma silenciosa. Cada raíz edita y actualiza su propio `.devkit`; si la raíz no permite crear esa carpeta, falla con error explícito en lugar de guardar el índice en otro sitio.
 
 ### nice
 
@@ -199,10 +206,12 @@ DevKit resuelve sus ubicaciones de estado según un perfil activo. La precedenci
 
 | Perfil | Descripción |
 |--------|-------------|
-| global | Estado en `%LOCALAPPDATA%\devkit`, configuración en `%APPDATA%\devkit` (predeterminado) |
-| portable | Estado junto a la instalación |
-| custom | Rutas especificadas explícitamente por el usuario |
-| temporary | Almacenamiento temporal, sin persistencia entre sesiones |
+| global | Estado en `%LOCALAPPDATA%\devkit`, configuración en `%APPDATA%\devkit`, cache en platformdirs (predeterminado) |
+| portable | Estado y configuración junto al paquete instalado, incluida la cache y los planes |
+| custom | Rutas de `[storage]` en config.toml; exige `state` y coloca cache, planes y journal dentro de esa ruta |
+| temporary | Todo el estado y la cache en la carpeta temporal del sistema, sin persistencia entre sesiones |
+
+Resolve con fail loud: si el perfil es custom y falta `state` en config.toml, o si el archivo de configuración existe pero está dañado o con tipos inválidos, el error es explícito (`ErrorConfiguracion`) y no hay fallback silencioso al perfil global. La carpeta de configuración se fija con `DEVKIT_CONFIG` o con `DEVKIT_PERFIL=portable`/`temporary` y nunca a través del propio config.toml, porque el archivo no puede resolver el directorio donde vive él mismo. El campo `storage.config` de configuraciones antiguas se ignora sin romper la migración.
 
 ### Variables de entorno
 
@@ -229,15 +238,16 @@ perfil = "global"
 
 [storage]
 state = "D:/DevKit/state"
-config = "D:/DevKit/config"
 cache = "D:/DevKit/cache"
 plans = "D:/DevKit/plans"
 journal = "D:/DevKit/journal"
 ```
 
+Cada campo de `[storage]` es opcional y respeta la misma precedencia: la variable de entorno correspondiente gana, luego config.toml, luego el perfil activo. El campo `perfil` dentro de `[storage]` tiene prioridad sobre el `perfil` de nivel superior cuando ambos existen.
+
 ## Espacios de trabajo
 
-Cada espacio de trabajo tiene su propio índice SQLite en `<raiz>/.devkit/index.sqlite`. Dos espacios de trabajo no contaminan sus índices.
+Cada espacio de trabajo tiene su propio índice SQLite en `<raiz>/.devkit/index.sqlite`. Dos espacios de trabajo no contaminan sus índices. Mover la carpeta mueve el índice con ella, porque vive dentro de la raíz y no en un estado global.
 
 ```powershell
 dev index construir C:\Proyectos\A
@@ -245,7 +255,7 @@ dev index construir C:\Proyectos\B
 dev index buscar python --raiz C:\Proyectos\A
 ```
 
-La búsqueda en un espacio no devuelve resultados de otro. El índice es rebuildable y no sincroniza con OneDrive.
+Con `DEVKIT_WORKSPACE` activo, los comandos de index resuelven esa raíz cuando no se pasa `--raiz`. La búsqueda en un espacio no devuelve resultados de otro. El índice es rebuildable y no sincroniza con OneDrive. Si la raíz de notas es de solo lectura y no permite crear `.devkit`, el comando falla con error explícito y no guarda el índice en otra ubicación sin avisar.
 
 ## Escenarios de uso
 
@@ -381,7 +391,7 @@ Casos de uso: respaldo antes de reinstalar, copia a USB, migración entre equipo
 
 Flujo interno: recorre sin seguir enlaces, detecta carpetas y archivos por nombre y sufijo, filtra por antigüedad, aplica tope de bytes por pasada, construye plan, ejecuta moviendo a papelera.
 
-Seguridad: excluye .git, src, tests. No sigue enlaces simbólicos. Respeta DEVKIT_READONLY. El plan se firma con SHA-256 y se guarda en planes para aplicar sin reescanear. Si el árbol cambia entre plan y aplicación, se aborta con aviso.
+Seguridad: excluye .git, src, tests. No sigue enlaces simbólicos. Respeta DEVKIT_READONLY. El plan se firma con SHA-256 cubriendo origen, tamaño y mtime de cada fila, y se guarda en planes con estado pendiente, aplicado o fallido. Antes de tocar nada valida que cada elemento sigue existiendo con el mismo tamaño y contenido, con destino solo para movimientos. Si el árbol cambia entre plan y aplicación, se aborta con aviso.
 
 Casos de uso: limpiar caches después de desarrollo, liberar espacio antes de backup, mantenimiento periódico.
 
@@ -389,7 +399,7 @@ Casos de uso: limpiar caches después de desarrollo, liberar espacio antes de ba
 
 Flujo interno: agrupa por tamaño (descarta únicos), prehash parcial (8 KB), hash completo con BLAKE3, selecciona conservar por ruta más corta y fecha más antigua, construye plan con tope, ejecuta moviendo a papelera.
 
-Seguridad: excluye .git, src, tests. No sigue enlaces. Filtra OneDrive por defecto. El plan se firma y se guarda. Si el árbol cambia entre plan y aplicación, se aborta con aviso.
+Seguridad: excluye .git, src, tests. No sigue enlaces. Filtra OneDrive por defecto. El plan se firma con SHA-256 cubriendo origen, tamaño y mtime, y se guarda con su estado. Antes de aplicar valida haya cambio de origen, tamaño o contenido, y aborta con aviso si el árbol cambió.
 
 Casos de uso: liberar espacio en discos llenos, limpiar carpetas de fotos duplicadas, mantenimiento de archivos de trabajo.
 
@@ -397,7 +407,7 @@ Casos de uso: liberar espacio en discos llenos, limpiar carpetas de fotos duplic
 
 Flujo interno: recorre sin seguir enlaces, detecta tipo por magic number y extensión, calcula año por mtime, propone ruta Organizados/<año>/<tipo>/<nombre>, resuelve colisiones, construye plan, ejecuta moviendo.
 
-Seguridad: excluye .git, src, tests. No sigue enlaces. Respeta DEVKIT_READONLY. El plan se firma. Sin --todos ni --por-archivo no se aplica nada. Sin tty, --por-archivo aborta. Pasa por el guardián centralizado.
+Seguridad: excluye .git, src, tests. No sigue enlaces. Respeta DEVKIT_READONLY. El plan se firma con SHA-256 sobre origen, destino, tamaño y mtime. `plan` guarda el manifiesto persistente y `aplicar --plan` lo consume sin reescanear; sin plan previo, generar, guardar, validar y aplicar es un solo flujo. Valida cada movimiento contra destino ocupado y no sobrescribe nada. Sin --todos ni --por-archivo no se aplica nada. Sin tty, --por-archivo aborta. Pasa por el guardián centralizado.
 
 Casos de uso: organizar descargas, clasificar por año y tipo, preparar archivos para archivo.
 
@@ -419,9 +429,9 @@ Casos de uso: capturar ideas, documentar proyectos, mantener notas organizadas.
 
 ### index
 
-Flujo interno: construye SQLite con FTS5 (unicode61) sobre título y cuerpo en `<raiz>/.devkit/index.sqlite`. Busca con snippet. Actualiza por mtime. Exporta a JSON. Cada espacio de trabajo tiene su propio índice aislado.
+Flujo interno: construye SQLite con FTS5 (unicode61) sobre título y cuerpo en `<raiz>/.devkit/index.sqlite`. Busca con snippet. Actualiza por mtime. Exporta a JSON. La raíz se resuelve por precedencia: `--raiz` > `DEVKIT_WORKSPACE` > directorio actual, sin consulta a ningún índice global si esa raíz no tiene índice.
 
-Seguridad: el índice vive en el espacio de trabajo, no en el perfil global. Es rebuildable. Respeta DEVKIT_READONLY.
+Seguridad: el índice vive en el espacio de trabajo, no en el perfil global, y la carpeta mueve el índice con ella. Es rebuildable. La base abre en WAL y las escrituras incrementales van en una transacción inmediata (`BEGIN IMMEDIATE`), de modo que dos procesos que actualizan a la vez se serializan y no chocan contra el UNIQUE de rutas. Respeta DEVKIT_READONLY.
 
 Casos de uso: buscar en notas, encontrar referencias, exportar para revisión.
 
@@ -429,7 +439,7 @@ Casos de uso: buscar en notas, encontrar referencias, exportar para revisión.
 
 Flujo interno: lanza proceso con subprocess, aplica prioridad, mide memoria pico con hilo mientras corre, captura stdout/stderr, mata si timeout, cierra Job.
 
-Seguridad: mata al hijo si falla la prioridad. Tiempo máximo obligatorio. Job Object para límite de memoria (cuando el kernel lo acepta). Registra pico en el journal.
+Seguridad: mata al hijo si falla la prioridad. Tiempo máximo obligatorio. Job Object para límite de memoria: si el kernel rechaza fijar el límite, el Job se cierra y el proceso sigue solo con prioridad baja y tiempo máximo, y el pico de memoria queda registrado en el journal como observación, no como impostación. Registra pico en el journal.
 
 Casos de uso: ejecutar scripts largos sin bloquear, procesar archivos pesados, tareas de OCR.
 
@@ -449,17 +459,19 @@ El núcleo concentra lo que comparten todas las herramientas y no contiene lógi
 |--------|-----------------|
 | paths.py | Rutas del sistema, detección de OneDrive, rutas extendidas, perfiles de almacenamiento, platformdirs |
 | safety.py | Modo solo lectura, guardián centralizado, planes persistentes firmados con SHA-256 |
-| runlog.py | Journal transaccional (PENDING, RUNNING, COMPLETED, FAILED, INTERRUPTED) |
+| runlog.py | Journal transaccional (PENDING, RUNNING, COMPLETED, FAILED, INTERRUPTED) con espacio de trabajo, id de plan y recuperación de ejecuciones interrumpidas |
 | output.py | JSON y tabla legible |
 | proceso.py | Procesos con prioridad baja y Job Object |
 | sistema.py | Información del sistema operativo |
-| config.py | Configuración persistente en TOML con sección storage |
+| config.py | Configuración persistente en TOML con sección storage y errores explícitos ante archivo dañado |
 | errors.py | Excepciones con códigos de salida estables |
 | markdown.py | Parser de frontmatter, slugify, enlaces rotos |
 
 ## Reglas del proyecto
 
-El código, los comentarios y los mensajes visibles están en español. Los identificadores no usan palabras reservadas del lenguaje. La salida por defecto es JSON. Toda escritura pasa por el módulo de seguridad y respeta la variable DEVKIT_READONLY. El estado vive en la carpeta local del usuario y nunca dentro del repositorio.
+El código, los comentarios y los mensajes visibles están en español. Los identificadores no usan palabras reservadas del lenguaje. La salida por defecto es JSON. Toda escritura pasa por el módulo de seguridad y respeta la variable DEVKIT_READONLY.
+
+Las rutas del estado se resuelven por capas: variable de entorno, config.toml en su sección storage, perfil activo y raíces del sistema. El perfil custom exige `state` en config.toml y un config.toml dañado o con tipos inválidos falla con error explícito, nunca con un fallback silencioso al perfil global.
 
 El journal es transaccional y los planes tienen manifiesto firmado para aplicar sin reescanear. Las comprobaciones de salud usan ok, aviso, error y unknown para no fingir salud cuando no hay datos.
 
@@ -472,7 +484,9 @@ uv run pytest
 uv run ruff check .
 ```
 
-211 pruebas en verde. Todas usan el sistema de archivos real sobre carpetas temporales, sin mocks del sistema de archivos. Integración continua en Windows con uv sync --locked, ruff y pytest. Pruebas de independencia de ubicación verifican ejecución desde cualquier carpeta y aislamiento de workspaces.
+254 pruebas en verde, con 2 pruebas omitidas sin Tesseract instalado (3 en la integración continua sin el binario). Todas usan el sistema de archivos real sobre carpetas temporales, sin mocks del sistema de archivos. Integración continua en Windows con uv sync --locked, ruff y pytest.
+
+Las pruebas de contrato cubren los escenarios que fijan el comportamiento prometido: precedencia de rutas por capas y perfiles de almacenamiento con fail loud, validación del manifiesto entre plan y aplicación con estados pendiente, aplicado y fallido, trazabilidad del journal con espacio de trabajo e id de plan y recuperación de ejecuciones interrumpidas, identidad de espacios de trabajo en el índice con resolución por raíz efectiva, concurrencia de escrituras en SQLite con WAL y transacciones inmediatas, y migración de configuraciones antiguas sin perder datos.
 
 ## Documentación
 

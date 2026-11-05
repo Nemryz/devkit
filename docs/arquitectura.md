@@ -12,7 +12,7 @@ Cada herramienta vive en un archivo propio, recibe sus dependencias por parametr
 
 ## Estado
 
-El estado vive en la carpeta local del perfil del usuario. El journal es la fuente de verdad y se escribe antes de cada accion destructiva. Las bases SQLite son caches reconstruibles y nunca sustituyen al journal. Los planes persistentes viven en planes con firma SHA-256 del manifiesto para aplicar sin reescanear el arbol en Bloque D.
+El estado vive en la carpeta local del perfil del usuario. El journal es la fuente de verdad y se escribe antes de cada accion destructiva. Las bases SQLite son caches reconstruibles y nunca sustituyen al journal. Los planes persistentes viven en planes con firma SHA-256 del manifiesto para aplicar sin reescanear el arbol, con estado pendiente, aplicado o fallido.
 
 ## Flujo de una operacion destructiva
 

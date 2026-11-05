@@ -10,7 +10,7 @@ Genera un archivo cifrado con manifiesto SHA-256 y prueba de restauracion obliga
 
 ## trim
 
-Limpia caches y artefactos con plan previo, papelera de Windows y journal transaccional. Excluye .git, src y tests. Respeta DEVKIT_READONLY. El plan incluye manifiesto firmado para aplicar sin reescanear el arbol en Bloque D.
+Limpia caches y artefactos con plan previo, papelera de Windows y journal transaccional. Excluye .git, src y tests. Respeta DEVKIT_READONLY. El plan incluye manifiesto firmado para aplicar sin reescanear el arbol y valida tamano, fecha y destino antes de mover.
 
 ## dedupe
 
@@ -26,7 +26,7 @@ Envuelve un proceso hijo con prioridad en bajo (BELOW_NORMAL_PRIORITY_CLASS) y t
 
 ## organize
 
-Clasifica por extension, firma binaria y año, con confirmacion archivo por archivo o --todos. Resuelve colisiones con _2, _3. El plan incluye manifiesto firmado para Bloque D.
+Clasifica por extension, firma binaria y año, con confirmacion archivo por archivo o --todos. Resuelve colisiones con _2, _3. El manifiesto firmado cubre origen, destino, tamano y fecha, y se puede aplicar sin reescanear con --plan.
 
 ## idea
 

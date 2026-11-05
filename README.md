@@ -1,51 +1,363 @@
 # devkit
 
-Herramientas internas de mantenimiento para Windows, escritas en Python y pensadas para ejecutarse bajo demanda, sin servicios residentes.
+Herramientas internas de mantenimiento para Windows, escritas en Python y pensadas para ejecutarse bajo demanda, sin servicios residentes. El objetivo es tener un pequeño entorno de mantenimiento local con capacidades especializadas que comparten un núcleo común de seguridad, registro y salida.
 
-## Estado actual
+## Instalación global
 
-La fase cero entrega el esqueleto del paquete, el registro de ejecuciones, el modo de solo lectura y el comando doctor. Las herramientas de backup, limpieza, deduplicacion, salud, organizacion, ideas, indice y OCR estan implementadas. OCR es solo lectura y extrae texto con Tesseract.
+El comando `dev` se instala una sola vez y queda disponible desde cualquier carpeta de PowerShell o CMD. No depende de estar dentro del repositorio.
 
-## Instalacion
+### PowerShell
 
 ```powershell
-uv sync
-uv run dev --help
-uv tool install --editable .
+uv tool install --editable C:\Users\ignac\Projects\devkit
+dev --version
+```
+
+### CMD
+
+```cmd
+uv tool install --editable C:\Users\ignac\Projects\devkit
+dev --version
+```
+
+### Verificar que funciona desde cualquier carpeta
+
+```powershell
+cd C:\
+dev --version
+dev doctor
+```
+
+Si `dev` no responde, el directorio de ejecutables no está en el PATH. Agregarlo manualmente:
+
+```powershell
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:USERPROFILE\.local\bin", "User")
+```
+
+Después de agregar el PATH, reiniciar la consola. Para automatizar la instalación completa, usar el script incluido:
+
+```powershell
+.\install.ps1
+```
+
+### Reinstalar o actualizar
+
+```powershell
+cd C:\Users\ignac\Projects\devkit
+uv tool install --editable . --force
 ```
 
 ## Comandos
 
+Todos los comandos devuelven JSON por defecto. Con `--formato tabla` se obtiene salida legible por personas. Los códigos de salida son 0 (correcto), 1 (aviso), 2 (error) y 4 (solo lectura).
+
+### doctor
+
+Comprueba el entorno antes de ejecutar cualquier otra herramienta.
+
 ```powershell
 dev doctor
 dev doctor --formato tabla
+```
+
+Revisa versión de Python, dependencias del núcleo, memoria disponible, espacio libre, carpeta de estado, journal, OneDrive, rutas largas y elevación. Devuelve JSON por defecto.
+
+### health
+
+Genera un informe de salud del equipo sin permisos de administrador ni servicios.
+
+```powershell
 dev health
-dev backup crear --origen C:\Notas --destino C:\Respaldos --clave clave.txt --etiqueta notas
-dev backup verificar C:\Respaldos\20260101-notas --clave clave.txt
-dev backup restaurar C:\Respaldos\20260101-notas --destino C:\Restaurado --clave clave.txt
+dev health --formato tabla
+```
+
+Bloques: memoria, disco, batería, temperatura, SMART, Defender, actualizaciones, inicio y eventos. Distingue cuatro estados: ok, aviso, error y unknown. Cuando no hay datos (wmic no disponible, sin acceso al registro), el estado es unknown y no se interpreta como sano.
+
+### backup
+
+Respaldos cifrados con manifiesto de hashes y verificación obligatoria.
+
+```powershell
+dev backup crear --origen C:\Notas --destino D:\Respaldos --clave clave.txt --etiqueta notas
+dev backup verificar D:\Respaldos\20260101-notas --clave clave.txt
+dev backup restaurar D:\Respaldos\20260101-notas --destino C:\Restaurado --clave clave.txt
 dev backup listar
+dev backup listar --destino D:\Respaldos
+```
+
+Crea un archivo 7z con cifrado AES-256 y cabecera cifrada. Escribe un manifiesto con SHA-256 por archivo. Verifica extrayendo en una carpeta temporal y comparando hashes. La restauración comprueba integridad al terminar.
+
+### trim
+
+Limpieza de caches y artefactos con plan previo, papelera de Windows y journal transaccional.
+
+```powershell
+dev trim escanear C:\Proyectos
+dev trim escanear C:\Proyectos --incluir-venv
+dev trim aplicar C:\Proyectos --forzar
+dev trim aplicar C:\Proyectos --forzar --edad-dias 14
+```
+
+Detecta carpetas de cache (__pycache__, .pytest_cache, .ruff_cache, .mypy_cache, build, dist, htmlcov, node_modules) y archivos temporales (.log, .pyc, .pyo, .tmp). Excluye .git, src y tests. Respeta DEVKIT_READONLY. El plan incluye manifiesto firmado para aplicar sin reescanear el árbol en Bloque D.
+
+### dedupe
+
+Detección de duplicados exactos con BLAKE3, plan previo y papelera de Windows.
+
+```powershell
+dev dedupe escanear C:\Proyectos
+dev dedupe escanear C:\Proyectos --edad-dias 60
+dev dedupe aplicar C:\Proyectos --forzar
+```
+
+Agrupa por tamaño, calcula prehash parcial (primeros 8 KB) y hash completo con BLAKE3. Conserva la ruta más corta y, a igualdad, el archivo más antiguo. Incluye resumen por extensión y filtro de OneDrive. El plan incluye manifiesto firmado para Bloque D.
+
+### organize
+
+Clasificación por extensión, firma binaria y año, con confirmación archivo por archivo.
+
+```powershell
+dev organize plan C:\Descargas
+dev organize aplicar --todos C:\Descargas
+dev organize aplicar --por-archivo C:\Descargas
+```
+
+Detecta el tipo real por magic number (JPEG, PNG, PDF, ZIP, MP3, MP4, etc.) y cae a la extensión si no hay firma. Organiza en `Organizados/<año>/<tipo>/<nombre>`. Resuelve colisiones con `_2`, `_3`. El plan incluye manifiesto firmado para Bloque D.
+
+### idea
+
+Notas Markdown con frontmatter validado y revisión de enlaces.
+
+```powershell
+dev idea crear C:\FutureProjects\notas --titulo "Mi idea" --cuerpo "Contenido" --etiqueta devkit --estado activo
+dev idea revisar C:\FutureProjects\notas
+dev idea listar C:\FutureProjects\notas
+dev idea listar C:\FutureProjects\notas --estado activo
+```
+
+Crea archivos con frontmatter (titulo, creado, etiquetas, estado, origen). Valida campos obligatorios y formato de fecha. Revisa enlaces rotos `[texto](ruta.md)`. Avisa si el título ya existe. El campo origen admite manual, ocr, scrape e importado.
+
+### index
+
+Índice SQLite con FTS5 sobre las notas Markdown.
+
+```powershell
+dev index construir C:\FutureProjects\notas
+dev index buscar python
+dev index buscar python --raiz C:\FutureProjects\notas --limite 5
+dev index actualizar C:\FutureProjects\notas
+dev index exportar C:\FutureProjects\export.json --raiz C:\FutureProjects\notas
+```
+
+Construye un índice FTS5 (tokenize unicode61) sobre título y cuerpo. Permite buscar con fragmentos resaltados. Actualiza de forma incremental por mtime. Exporta a JSON. El índice vive en `%LOCALAPPDATA%\devkit\index.sqlite`.
+
+### nice
+
+Ejecuta hijos con prioridad baja y registro de memoria.
+
+```powershell
+dev nice ejecutar -- python -c "print(1)"
+dev nice ejecutar --prioridad idle --tiempo 300 -- python script.py
+dev nice ejecutar --memoria-mb 512 -- python pesado.py
+```
+
+Aplica BELOW_NORMAL_PRIORITY_CLASS al proceso hijo. Tiempo máximo configurable. Mide memoria pico con un hilo mientras corre. Si SetInformationJobObject devuelve 24, cierra el Job y sigue sin límite antes que romper. Registra pico en el journal.
+
+### ocr
+
+OCR en solo lectura con Tesseract y PyMuPDF.
+
+```powershell
+dev ocr escanear C:\Documentos
+dev ocr escanear C:\Documentos --idioma spa
+dev ocr exportar C:\Documentos --destino C:\OCR
+```
+
+Extrae texto de imágenes y PDFs con Tesseract 5.5.3. Renderiza PDFs a 150 dpi con PyMuPDF. Calcula confianza media, mínima y conteo de palabras por página. Exporta notas con origen ocr listas para idea e index. No mueve, borra ni clasifica archivos. Respeta DEVKIT_READONLY.
+
+## Escenarios de uso
+
+### Escenario 1: equipo lento con poca RAM
+
+El equipo tiene 8 GB en single channel y menos de 1,5 GB libres. El objetivo es recuperar rendimiento sin reinstalar.
+
+```powershell
+dev doctor
+dev health --formato tabla
 dev trim escanear C:\Proyectos
 dev trim aplicar C:\Proyectos --forzar
 dev dedupe escanear C:\Proyectos
 dev dedupe aplicar C:\Proyectos --forzar
-dev organize plan C:\Descargas
-dev organize aplicar --todos C:\Descargas
-dev idea crear C:\FutureProjects\notas --titulo "Mi idea" --cuerpo "Contenido"
-dev index construir C:\FutureProjects\notas
-dev index buscar python
-dev nice ejecutar -- python -c "print(1)"
-dev --version
 ```
 
-Doctor comprueba version de Python, dependencias, memoria disponible, espacio libre, carpeta de estado, journal, OneDrive, rutas largas y elevacion. Devuelve JSON por defecto y codigo de salida cero cuando todo esta correcto, uno cuando hay avisos y dos cuando hay errores.
+Doctor diagnostica el entorno. Health informa memoria, disco y eventos. Trim libera caches. Dedupe elimina duplicados. El journal registra cada acción para poder revertir.
 
-Health informa memoria, disco, bateria, SMART, Defender, actualizaciones, inicio y eventos. Backup crea un archivo cifrado con manifiesto y verificacion. Trim y dedupe limpian caches y duplicados a la papelera de Windows con plan previo. Organize clasifica por extension, firma y año. Idea crea notas Markdown validadas e index las busca con FTS5. Nice ejecuta con prioridad baja y tiempo maximo.
+### Escenario 2: carpeta de descargas desordenada
+
+La carpeta de descargas tiene archivos de varios tipos y años mezclados.
+
+```powershell
+dev organize plan C:\Descargas
+dev organize plan C:\Descargas --formato tabla
+dev organize aplicar --todos C:\Descargas
+```
+
+Organize detecta el tipo real por magic number (no solo extensión), propone `Organizados/<año>/<tipo>/<nombre>` y resuelve colisiones. El plan se muestra antes de mover. Sin `--todos` ni `--por-archivo` no se aplica nada.
+
+### Escenario 3: respaldo antes de reinstalar
+
+Antes de reinstalar Windows, respaldar documentos importantes.
+
+```powershell
+dev backup crear --origen C:\Notas --destino D:\Respaldos --clave clave.txt --etiqueta notas
+dev backup verificar D:\Respaldos\20260101-notas --clave clave.txt
+dev backup listar --destino D:\Respaldos
+```
+
+El respaldo es un archivo 7z con AES-256 y cabecera cifrada. El manifiesto contiene SHA-256 por archivo. La verificación extrae en temporal y compara. Para restaurar:
+
+```powershell
+dev backup restaurar D:\Respaldos\20260101-notas --destino C:\Restaurado --clave clave.txt
+```
+
+### Escenario 4: notas y búsqueda
+
+Crear, validar e indexar notas Markdown para buscarlas después.
+
+```powershell
+dev idea crear C:\FutureProjects\notas --titulo "Proyecto devkit" --cuerpo "Herramientas de mantenimiento" --etiqueta devkit --estado activo
+dev idea revisar C:\FutureProjects\notas
+dev idea listar C:\FutureProjects\notas --estado activo
+dev index construir C:\FutureProjects\notas
+dev index buscar mantenimiento
+dev index buscar devkit --limite 5
+```
+
+Idea valida frontmatter y revisa enlaces. Index construye FTS5 y devuelve fragmentos resaltados. Para actualizar después de añadir notas:
+
+```powershell
+dev index actualizar C:\FutureProjects\notas
+```
+
+### Escenario 5: procesar archivos pesados sin bloquear el escritorio
+
+Ejecutar un script largo sin ahogar el equipo.
+
+```powershell
+dev nice ejecutar -- python script_largo.py --tiempo 300
+dev nice ejecutar --prioridad idle -- python indexar.py
+```
+
+El hijo corre con BELOW_NORMAL_PRIORITY_CLASS. El tiempo máximo evita procesos colgados. La memoria pico se registra en el journal.
+
+### Escenario 6: digitalizar documentos escaneados
+
+Extraer texto de PDFs e imágenes escaneadas.
+
+```powershell
+dev ocr escanear C:\Documentos
+dev ocr exportar C:\Documentos --destino C:\OCR
+dev index construir C:\OCR
+dev index buscar contrato
+```
+
+OCR es solo lectura: no mueve, borra ni clasifica. Genera notas con origen ocr listas para indexar.
+
+## Análisis técnico por herramienta
+
+### backup
+
+Flujo interno: valida orígenes y destino, recorre sin seguir enlaces, calcula SHA-256 por archivo, empaqueta en tar, comprime con 7z (AES-256, cabecera cifrada), escribe manifiesto JSON, limpia el tar temporal.
+
+Seguridad: la contraseña se pasa por entrada estándar, nunca por línea de comandos. Verificación extrae en carpeta temporal y compara hashes. Restauración comprueba integridad al terminar.
+
+Casos de uso: respaldo antes de reinstalar, copia a USB, migración entre equipos.
+
+### trim
+
+Flujo interno: recorre sin seguir enlaces, detecta carpetas y archivos por nombre y sufijo, filtra por antigüedad, aplica tope de bytes por pasada, construye plan, ejecuta moviendo a papelera.
+
+Seguridad: excluye .git, src, tests. No sigue enlaces simbólicos. Respeta DEVKIT_READONLY. El plan se firma con SHA-256 y se guarda en planes para aplicar sin reescanear.
+
+Casos de uso: limpiar caches después de desarrollo, liberar espacio antes de backup, mantenimiento periódico.
+
+### dedupe
+
+Flujo interno: agrupa por tamaño (descarta únicos), prehash parcial (8 KB), hash completo con BLAKE3, selecciona conservar por ruta más corta y fecha más antigua, construye plan con tope, ejecuta moviendo a papelera.
+
+Seguridad: excluye .git, src, tests. No sigue enlaces. Filtra OneDrive por defecto. El plan se firma y se guarda. Si el árbol cambia entre plan y aplicación, aborta con aviso.
+
+Casos de uso: liberar espacio en discos llenos, limpiar carpetas de fotos duplicadas, mantenimiento de archivos de trabajo.
+
+### organize
+
+Flujo interno: recorre sin seguir enlaces, detecta tipo por magic number y extensión, calcula año por mtime, propone ruta Organizados/<año>/<tipo>/<nombre>, resuelve colisiones, construye plan, ejecuta moviendo.
+
+Seguridad: excluye .git, src, tests. No sigue enlaces. Respeta DEVKIT_READONLY. El plan se firma. Sin --todos ni --por-archivo no se aplica nada. Sin tty, --por-archivo aborta.
+
+Casos de uso: organizar descargas, clasificar por año y tipo, preparar archivos para archivo.
+
+### health
+
+Flujo interno: ejecuta 9 bloques (memoria, disco, batería, temperatura, SMART, Defender, actualizaciones, inicio, eventos). Cada bloque devuelve estado ok, aviso, error o unknown. Resume en estado general y código de salida.
+
+Seguridad: solo lectura, sin administrador, sin servicios. No modifica nada. Unknown cuando no hay datos para no fingir salud.
+
+Casos de uso: diagnóstico rápido, verificar estado antes de operaciones pesadas, monitorización manual.
+
+### idea
+
+Flujo interno: crea notas con frontmatter validado, revisa enlaces rotos, lista por estado. Genera nombre con slug y fecha. Avisa duplicados.
+
+Seguridad: respeta DEVKIT_READONLY. Solo escribe en la raíz indicada. Valida campos obligatorios.
+
+Casos de uso: capturar ideas, documentar proyectos, mantener notas organizadas.
+
+### index
+
+Flujo interno: construye SQLite con FTS5 (unicode61) sobre título y cuerpo. Busca con snippet. Actualiza por mtime. Exporta a JSON.
+
+Seguridad: el índice vive en %LOCALAPPDATA%, no en FutureProjects. Es rebuildable. Respeta DEVKIT_READONLY.
+
+Casos de uso: buscar en notas, encontrar referencias, exportar para revisión.
+
+### nice
+
+Flujo interno: lanza proceso con subprocess, aplica prioridad, mide memoria pico con hilo, captura stdout/stderr, mata si timeout, cierra Job.
+
+Seguridad: mata al hijo si falla la prioridad. Tiempo máximo obligatorio. Job Object para límite de memoria (cuando el kernel lo acepta).
+
+Casos de uso: ejecutar scripts largos sin bloquear, procesar archivos pesados, tareas de OCR.
+
+### ocr
+
+Flujo interno: recorre sin seguir enlaces, detecta imágenes y PDFs, renderiza PDFs a 150 dpi con PyMuPDF, ejecuta Tesseract, calcula confianza por palabra/página, genera notas con origen ocr.
+
+Seguridad: solo lectura, no mueve/borra/clasifica. Respeta DEVKIT_READONLY. Tiempo por documento vía nice.
+
+Casos de uso: digitalizar documentos escaneados, extraer texto de PDFs, preparar notas para indexar.
+
+## Núcleo compartido
+
+El núcleo concentra lo que comparten todas las herramientas y no contiene lógica de negocio.
+
+| Módulo | Responsabilidad |
+|--------|-----------------|
+| paths.py | Rutas del sistema, detección de OneDrive, rutas extendidas |
+| safety.py | Modo solo lectura, guardián centralizado, planes persistentes firmados |
+| runlog.py | Journal transaccional (PENDING, RUNNING, COMPLETED, FAILED, INTERRUPTED) |
+| output.py | JSON y tabla legible |
+| proceso.py | Procesos con prioridad baja y Job Object |
+| sistema.py | Información del sistema operativo |
+| config.py | Configuración persistente en TOML |
+| errors.py | Excepciones con códigos de salida estables |
+| markdown.py | Parser de frontmatter, slugify, enlaces rotos |
 
 ## Reglas del proyecto
 
-El codigo, los comentarios y los mensajes visibles estan en español. Los identificadores no usan palabras reservadas del lenguaje. La salida por defecto es JSON. Toda escritura pasa por el modulo de seguridad y respeta la variable DEVKIT_READONLY. El estado vive en la carpeta local del usuario y nunca dentro del repositorio.
+El código, los comentarios y los mensajes visibles están en español. Los identificadores no usan palabras reservadas del lenguaje. La salida por defecto es JSON. Toda escritura pasa por el módulo de seguridad y respeta la variable DEVKIT_READONLY. El estado vive en la carpeta local del usuario y nunca dentro del repositorio.
 
-El journal es transaccional (PENDING, RUNNING, COMPLETED, FAILED, INTERRUPTED) y los planes tienen manifiesto firmado para aplicar sin reescanear. Las comprobaciones de salud usan ok, aviso, error y unknown para no fingir salud cuando no hay datos.
+El journal es transaccional y los planes tienen manifiesto firmado para aplicar sin reescanear. Las comprobaciones de salud usan ok, aviso, error y unknown para no fingir salud cuando no hay datos.
 
 ## Pruebas
 
@@ -54,6 +366,8 @@ uv run pytest
 uv run ruff check .
 ```
 
-## Documentacion
+179 pruebas en verde. Todas usan el sistema de archivos real sobre carpetas temporales, sin mocks del sistema de archivos. Integración continua en Windows con uv sync --locked, ruff y pytest.
 
-La documentacion de producto vive en la carpeta FutureProjects. Este repositorio guarda el codigo y las decisiones tecnicas.
+## Documentación
+
+La documentación de producto vive en la carpeta FutureProjects. Este repositorio guarda el código y las decisiones técnicas.

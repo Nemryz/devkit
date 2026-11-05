@@ -11,6 +11,8 @@ from devkit.core.output import emitir
 from devkit.errors import ErrorBase
 from devkit.tools import backup as modulo_respaldo
 from devkit.tools import dedupe as modulo_dedupe
+from devkit.tools import idea as modulo_idea
+from devkit.tools import index as modulo_index
 from devkit.tools import nice as modulo_nice
 from devkit.tools import organize as modulo_organize
 from devkit.tools import trim as modulo_trim
@@ -47,6 +49,16 @@ app_organize = typer.Typer(
     help='Clasificacion por extension, firma y año con plan previo.',
 )
 app.add_typer(app_organize, name='organize')
+app_idea = typer.Typer(
+    no_args_is_help=True,
+    help='Notas Markdown con frontmatter validado y revision de enlaces.',
+)
+app.add_typer(app_idea, name='idea')
+app_index = typer.Typer(
+    no_args_is_help=True,
+    help='Indice SQLite con FTS5 sobre las notas Markdown.',
+)
+app.add_typer(app_index, name='index')
 
 
 def mostrar_version(valor: bool) -> None:
@@ -397,6 +409,123 @@ def comando_organize_aplicar(
         )
     except ErrorBase as fallo:
         salir_con_error('organize aplicar', fallo, formato)
+        return
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
+
+
+@app_idea.command('crear')
+def comando_idea_crear(
+    raiz: Path = typer.Argument(..., help='Carpeta de notas.'),
+    titulo: str = typer.Option(..., '--titulo', help='Titulo de la nota.'),
+    cuerpo: str = typer.Option('', '--cuerpo', help='Cuerpo de la nota.'),
+    etiquetas: list[str] = typer.Option(
+        [], '--etiqueta', help='Etiqueta, se puede repetir.'
+    ),
+    estado: str = typer.Option('borrador', '--estado', help='borrador, activo o archivado.'),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Crea una nota con frontmatter validado y nombre estable.
+    try:
+        resultado = modulo_idea.crear_nota(raiz, titulo, cuerpo, etiquetas, estado)
+    except ErrorBase as fallo:
+        salir_con_error('idea crear', fallo, formato)
+        return
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
+
+
+@app_idea.command('revisar')
+def comando_idea_revisar(
+    raiz: Path = typer.Argument(..., help='Carpeta de notas.'),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Revisa frontmatter y enlaces sin tocar el disco.
+    try:
+        resultado = modulo_idea.revisar_notas(raiz)
+    except ErrorBase as fallo:
+        salir_con_error('idea revisar', fallo, formato)
+        return
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
+
+
+@app_idea.command('listar')
+def comando_idea_listar(
+    raiz: Path = typer.Argument(..., help='Carpeta de notas.'),
+    estado: str | None = typer.Option(None, '--estado', help='Filtra por estado.'),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Lista las notas con su frontmatter resumido.
+    try:
+        resultado = modulo_idea.listar_notas(raiz, estado)
+    except ErrorBase as fallo:
+        salir_con_error('idea listar', fallo, formato)
+        return
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
+
+
+@app_index.command('construir')
+def comando_index_construir(
+    raiz: Path = typer.Argument(..., help='Carpeta de notas.'),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Reconstruye el indice FTS5 completo.
+    try:
+        resultado = modulo_index.construir_indice(raiz)
+    except ErrorBase as fallo:
+        salir_con_error('index construir', fallo, formato)
+        return
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
+
+
+@app_index.command('buscar')
+def comando_index_buscar(
+    termino: str = typer.Argument(..., help='Termino a buscar.'),
+    raiz: Path | None = typer.Option(None, '--raiz', '-r', help='Carpeta de notas.'),
+    estado: str | None = typer.Option(None, '--estado', help='Filtra por estado.'),
+    limite: int = typer.Option(20, '--limite', help='Maximo de resultados.'),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Busca en el indice FTS5 y devuelve fragmentos.
+    try:
+        resultado = modulo_index.buscar(raiz, termino, estado, limite)
+    except ErrorBase as fallo:
+        salir_con_error('index buscar', fallo, formato)
+        return
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
+
+
+@app_index.command('actualizar')
+def comando_index_actualizar(
+    raiz: Path = typer.Argument(..., help='Carpeta de notas.'),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Actualiza el indice de forma incremental.
+    try:
+        resultado = modulo_index.actualizar_indice(raiz)
+    except ErrorBase as fallo:
+        salir_con_error('index actualizar', fallo, formato)
+        return
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
+
+
+@app_index.command('exportar')
+def comando_index_exportar(
+    salida: Path = typer.Argument(..., help='Archivo JSON de salida.'),
+    raiz: Path | None = typer.Option(None, '--raiz', '-r', help='Carpeta de notas.'),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Exporta el indice a JSON para revisarlo fuera de SQLite.
+    try:
+        bd = modulo_index.ruta_indice(raiz)
+        resultado = modulo_index.exportar_indice(bd, salida)
+    except ErrorBase as fallo:
+        salir_con_error('index exportar', fallo, formato)
         return
     emitir(resultado, formato=formato)
     raise typer.Exit(code=resultado['codigo'])

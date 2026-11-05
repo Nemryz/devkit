@@ -1,0 +1,218 @@
+# Indice SQLite con FTS5 sobre notas Markdown.
+from __future__ import annotations
+
+import json
+import sqlite3
+import time
+from datetime import UTC, datetime
+from pathlib import Path
+
+from devkit.core import markdown as modulo_markdown
+from devkit.core import paths, runlog, safety
+from devkit.errors import ErrorIndex
+
+NOMBRE_BD = 'index.sqlite'
+
+
+def validar_raiz(raiz: Path | str) -> Path:
+    # Comprueba que la raiz de notas exista y sea una carpeta.
+    ruta = Path(raiz).expanduser().resolve()
+    if not ruta.is_dir():
+        raise ErrorIndex(f'la raiz no existe o no es carpeta {ruta}')
+    return ruta
+
+
+def ruta_indice(raiz: Path | None = None) -> Path:
+    # El indice vive en el estado local, no en FutureProjects.
+    return paths.directorio_estado() / NOMBRE_BD
+
+
+def _abrir(ruta: Path) -> sqlite3.Connection:
+    # Abre la base con FTS5 habilitado y crea las tablas si faltan.
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    conexion = sqlite3.connect(str(ruta))
+    conexion.execute(
+        'CREATE VIRTUAL TABLE IF NOT EXISTS notas_fts USING fts5('
+        'titulo, cuerpo, ruta, tokenize="unicode61")'
+    )
+    conexion.execute(
+        'CREATE TABLE IF NOT EXISTS notas (id INTEGER PRIMARY KEY, ruta TEXT UNIQUE, '
+        'titulo TEXT, creado TEXT, palabras INTEGER, mtime REAL)'
+    )
+    conexion.commit()
+    return conexion
+
+
+def _extraer_nota(ruta: Path) -> tuple[str, str, int, float]:
+    # Lee la nota y devuelve titulo, cuerpo, numero de palabras y mtime.
+    texto = ruta.read_text(encoding='utf-8')
+    datos, cuerpo = modulo_markdown.parsear_frontmatter(texto)
+    titulo = str(datos.get('titulo', '')).strip()
+    if not titulo:
+        titulo = ruta.stem
+    return titulo, cuerpo, len(cuerpo.split()), ruta.stat().st_mtime
+
+
+def construir_indice(raiz: Path, ruta_bd: Path | None = None) -> dict:
+    # Reconstruye el indice completo a partir de las notas existentes.
+    safety.verificar_escritura('construir indice')
+    inicio = time.perf_counter()
+    base = validar_raiz(raiz)
+    destino = ruta_indice()
+    if destino.exists():
+        try:
+            destino.unlink()
+        except OSError as fallo:
+            detalle = f'no se pudo limpiar el indice {destino} porque {fallo}'
+            raise ErrorIndex(detalle) from fallo
+    conexion = _abrir(destino)
+    insertados = 0
+    actualizados = 0
+    for ruta in sorted(base.rglob('*.md')):
+        protegidas = {'.git', 'node_modules', '__pycache__'}
+        if any(parte in protegidas for parte in ruta.relative_to(base).parts):
+            continue
+        try:
+            titulo, cuerpo, palabras, mtime = _extraer_nota(ruta)
+        except OSError:
+            continue
+        conexion.execute(
+            'INSERT INTO notas (ruta, titulo, creado, palabras, mtime) VALUES (?, ?, ?, ?, ?)',
+            (str(ruta), titulo, str(datetime.now(UTC).date()), palabras, mtime),
+        )
+        conexion.execute(
+            'INSERT INTO notas_fts (titulo, cuerpo, ruta) VALUES (?, ?, ?)',
+            (titulo, cuerpo, str(ruta)),
+        )
+        insertados += 1
+    conexion.commit()
+    conexion.close()
+    runlog.registrar_ejecucion('index', ['construir'], inicio, 0, 0, 'construir')
+    return {
+        'herramienta': 'index',
+        'accion': 'construir',
+        'estado': 'correcto',
+        'codigo': 0,
+        'raiz': str(base),
+        'indice': str(destino),
+        'total_notas': insertados,
+        'total_actualizadas': actualizados,
+        'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
+    }
+
+
+def buscar(raiz: Path | None, termino: str, estado: str | None = None, limite: int = 20) -> dict:
+    # Consulta FTS5 y devuelve fragmentos con el termino resaltado.
+    inicio = time.perf_counter()
+    destino = ruta_indice()
+    if not destino.is_file():
+        raise ErrorIndex(f'no existe el indice en {destino}, ejecuta index construir')
+    conexion = sqlite3.connect(str(destino))
+    consulta = (
+        'SELECT ruta, titulo, snippet(notas_fts, 1, "[", "]", "...", 12) '
+        'FROM notas_fts WHERE notas_fts MATCH ? LIMIT ?'
+    )
+    try:
+        filas = conexion.execute(consulta, (termino, limite)).fetchall()
+    except sqlite3.OperationalError as fallo:
+        raise ErrorIndex(f'consulta invalida {fallo}') from fallo
+    finally:
+        conexion.close()
+    resultados = [
+        {'ruta': fila[0], 'titulo': fila[1], 'fragmento': fila[2]} for fila in filas
+    ]
+    return {
+        'herramienta': 'index',
+        'accion': 'buscar',
+        'estado': 'correcto',
+        'codigo': 0,
+        'termino': termino,
+        'total': len(resultados),
+        'resultados': resultados,
+        'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
+    }
+
+
+def actualizar_indice(raiz: Path, ruta_bd: Path | None = None) -> dict:
+    # Reconstruye solo las notas cuyo mtime cambio o que son nuevas.
+    safety.verificar_escritura('actualizar indice')
+    inicio = time.perf_counter()
+    base = validar_raiz(raiz)
+    destino = ruta_indice()
+    conexion = _abrir(destino)
+    actualizados = 0
+    insertados = 0
+    for ruta in sorted(base.rglob('*.md')):
+        protegidas = {'.git', 'node_modules', '__pycache__'}
+        if any(parte in protegidas for parte in ruta.relative_to(base).parts):
+            continue
+        try:
+            titulo, cuerpo, palabras, mtime = _extraer_nota(ruta)
+        except OSError:
+            continue
+        fila = conexion.execute(
+            'SELECT mtime FROM notas WHERE ruta = ?', (str(ruta),)
+        ).fetchone()
+        if fila and fila[0] == mtime:
+            continue
+        if fila:
+            conexion.execute('DELETE FROM notas WHERE ruta = ?', (str(ruta),))
+            conexion.execute('DELETE FROM notas_fts WHERE ruta = ?', (str(ruta),))
+            actualizados += 1
+        else:
+            insertados += 1
+        conexion.execute(
+            'INSERT INTO notas (ruta, titulo, creado, palabras, mtime) VALUES (?, ?, ?, ?, ?)',
+            (str(ruta), titulo, str(datetime.now(UTC).date()), palabras, mtime),
+        )
+        conexion.execute(
+            'INSERT INTO notas_fts (titulo, cuerpo, ruta) VALUES (?, ?, ?)',
+            (titulo, cuerpo, str(ruta)),
+        )
+    # Elimina las notas que ya no existen.
+    existentes = {str(ruta) for ruta in base.rglob('*.md')}
+    for (ruta,) in conexion.execute('SELECT ruta FROM notas').fetchall():
+        if ruta not in existentes:
+            conexion.execute('DELETE FROM notas WHERE ruta = ?', (ruta,))
+            conexion.execute('DELETE FROM notas_fts WHERE ruta = ?', (ruta,))
+    conexion.commit()
+    total = conexion.execute('SELECT COUNT(*) FROM notas').fetchone()[0]
+    conexion.close()
+    runlog.registrar_ejecucion('index', ['actualizar'], inicio, 0, 0, 'actualizar')
+    return {
+        'herramienta': 'index',
+        'accion': 'actualizar',
+        'estado': 'correcto',
+        'codigo': 0,
+        'raiz': str(base),
+        'indice': str(destino),
+        'total_notas': total,
+        'insertados': insertados,
+        'actualizados': actualizados,
+        'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
+    }
+
+
+def exportar_indice(ruta_bd: Path, salida: Path) -> dict:
+    # Exporta el indice a JSON para revisarlo fuera de SQLite.
+    inicio = time.perf_counter()
+    if not ruta_bd.is_file():
+        raise ErrorIndex(f'no existe el indice en {ruta_bd}')
+    conexion = sqlite3.connect(str(ruta_bd))
+    filas = conexion.execute('SELECT ruta, titulo, creado, palabras FROM notas').fetchall()
+    conexion.close()
+    datos = [
+        {'ruta': fila[0], 'titulo': fila[1], 'creado': fila[2], 'palabras': fila[3]}
+        for fila in filas
+    ]
+    salida.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding='utf-8')
+    return {
+        'herramienta': 'index',
+        'accion': 'exportar',
+        'estado': 'correcto',
+        'codigo': 0,
+        'indice': str(ruta_bd),
+        'salida': str(salida),
+        'total': len(datos),
+        'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
+    }

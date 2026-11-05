@@ -41,3 +41,11 @@ class ErrorDuplicados(ErrorBase):
 
 class ErrorOrganizar(ErrorBase):
     pass
+
+
+class ErrorIdea(ErrorBase):
+    pass
+
+
+class ErrorIndex(ErrorBase):
+    pass

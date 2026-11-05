@@ -152,24 +152,25 @@ dev organize aplicar --todos C:\Descargas --plan <ruta-del-manifiesto>.json
 Notas Markdown con frontmatter validado y revisión de enlaces.
 
 ```powershell
-dev idea crear C:\FutureProjects\notas --titulo "Mi idea" --cuerpo "Contenido" --etiqueta devkit --estado activo
-dev idea revisar C:\FutureProjects\notas
-dev idea listar C:\FutureProjects\notas
-dev idea listar C:\FutureProjects\notas --estado activo
+mkdir C:\Notas
+dev idea crear C:\Notas --titulo "Mi idea" --cuerpo "Contenido" --etiqueta devkit --estado activo
+dev idea revisar C:\Notas
+dev idea listar C:\Notas
+dev idea listar C:\Notas --estado activo
 ```
 
-Crea archivos con frontmatter (titulo, creado, etiquetas, estado, origen). Valida campos obligatorios y formato de fecha. Revisa enlaces rotos `[texto](ruta.md)`. Avisa si el título ya existe. El campo origen admite manual, ocr, scrape e importado.
+Crea archivos con frontmatter (titulo, creado, etiquetas, estado, origen). Valida campos obligatorios y formato de fecha. Revisa enlaces rotos `[texto](ruta.md)`. Avisa si el título ya existe. El campo origen admite manual, ocr, scrape e importado. La carpeta de notas debe existir antes de usar idea, porque ninguna acción la crea por ti y el error por carpeta ausente es explícito.
 
 ### index
 
 Índice SQLite con FTS5 sobre las notas Markdown. Cada espacio de trabajo tiene su propio índice aislado.
 
 ```powershell
-dev index construir C:\FutureProjects\notas
+dev index construir C:\Notas
 dev index buscar python
-dev index buscar python --raiz C:\FutureProjects\notas --limite 5
-dev index actualizar C:\FutureProjects\notas
-dev index exportar C:\FutureProjects\export.json --raiz C:\FutureProjects\notas
+dev index buscar python --raiz C:\Notas --limite 5
+dev index actualizar C:\Notas
+dev index exportar C:\Notas\export.json --raiz C:\Notas
 ```
 
 Construye un índice FTS5 (tokenize unicode61) sobre título y cuerpo en `<raiz>/.devkit/index.sqlite`. Permite buscar con fragmentos resaltados. Actualiza de forma incremental por mtime. Exporta a JSON. La raíz del índice se resuelve por precedencia: `--raiz` explícito > variable `DEVKIT_WORKSPACE` > directorio actual. Si no existe el índice en esa raíz, avisa con `ejecuta index construir` y no consulta ningún índice global de forma silenciosa. Cada raíz edita y actualiza su propio `.devkit`; si la raíz no permite crear esa carpeta, falla con error explícito en lugar de guardar el índice en otro sitio.
@@ -307,18 +308,19 @@ dev backup restaurar D:\Respaldos\20260101-notas --destino C:\Restaurado --clave
 Crear, validar e indexar notas Markdown para buscarlas después.
 
 ```powershell
-dev idea crear C:\FutureProjects\notas --titulo "Proyecto devkit" --cuerpo "Herramientas de mantenimiento" --etiqueta devkit --estado activo
-dev idea revisar C:\FutureProjects\notas
-dev idea listar C:\FutureProjects\notas --estado activo
-dev index construir C:\FutureProjects\notas
-dev index buscar mantenimiento
-dev index buscar devkit --limite 5
+mkdir C:\Notas
+dev idea crear C:\Notas --titulo "Proyecto devkit" --cuerpo "Herramientas de mantenimiento" --etiqueta devkit --estado activo
+dev idea revisar C:\Notas
+dev idea listar C:\Notas --estado activo
+dev index construir C:\Notas
+dev index buscar mantenimiento --raiz C:\Notas
+dev index buscar devkit --raiz C:\Notas --limite 5
 ```
 
-Idea valida frontmatter y revisa enlaces. Index construye FTS5 y devuelve fragmentos resaltados. Para actualizar después de añadir notas:
+Idea valida frontmatter y revisa enlaces. Index construye FTS5 y devuelve fragmentos resaltados. Con la carpeta de notas como directorio de trabajo o con `DEVKIT_WORKSPACE=C:\Notas`, buscar sin `--raiz` resuelve esa raíz por precedencia. Para actualizar después de añadir notas:
 
 ```powershell
-dev index actualizar C:\FutureProjects\notas
+dev index actualizar C:\Notas
 ```
 
 ### Escenario 5: procesar archivos pesados sin bloquear el escritorio
@@ -490,4 +492,4 @@ Las pruebas de contrato cubren los escenarios que fijan el comportamiento promet
 
 ## Documentación
 
-La documentación de producto vive en la carpeta FutureProjects. Este repositorio guarda el código y las decisiones técnicas.
+La documentación de producto no vive en este repositorio sino en un proyecto de documentación aparte. Este repositorio guarda el código y las decisiones técnicas.

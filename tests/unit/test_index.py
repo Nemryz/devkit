@@ -25,7 +25,7 @@ def test_construir_indice_cuenta_notas(estado_temporal, tmp_path):
     resultado = index.construir_indice(raiz)
     assert resultado['herramienta'] == 'index'
     assert resultado['total_notas'] == 2
-    bd = index.ruta_indice()
+    bd = index.ruta_indice(raiz)
     assert bd.is_file()
 
 
@@ -81,7 +81,7 @@ def test_exportar_indice(estado_temporal, tmp_path):
     crear_nota(raiz, 'Exportable', 'Cuerpo de prueba')
     index.construir_indice(raiz)
     salida = tmp_path / 'export.json'
-    resultado = index.exportar_indice(index.ruta_indice(), salida)
+    resultado = index.exportar_indice(index.ruta_indice(raiz), salida)
     assert resultado['total'] == 1
     assert salida.is_file()
     import json

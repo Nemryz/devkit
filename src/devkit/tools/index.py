@@ -23,7 +23,12 @@ def validar_raiz(raiz: Path | str) -> Path:
 
 
 def ruta_indice(raiz: Path | None = None) -> Path:
-    # El indice vive en el estado local, no en FutureProjects.
+    # El indice vive en el espacio de trabajo si se proporciona raiz.
+    if raiz is not None:
+        base = Path(raiz).expanduser().resolve()
+        carpeta_devkit = base / '.devkit'
+        carpeta_devkit.mkdir(parents=True, exist_ok=True)
+        return carpeta_devkit / NOMBRE_BD
     return paths.directorio_estado() / NOMBRE_BD
 
 
@@ -58,7 +63,7 @@ def construir_indice(raiz: Path, ruta_bd: Path | None = None) -> dict:
     safety.verificar_escritura('construir indice')
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
-    destino = ruta_indice()
+    destino = ruta_indice(raiz)
     if destino.exists():
         try:
             destino.unlink()
@@ -104,7 +109,7 @@ def construir_indice(raiz: Path, ruta_bd: Path | None = None) -> dict:
 def buscar(raiz: Path | None, termino: str, estado: str | None = None, limite: int = 20) -> dict:
     # Consulta FTS5 y devuelve fragmentos con el termino resaltado.
     inicio = time.perf_counter()
-    destino = ruta_indice()
+    destino = ruta_indice(raiz) if raiz else ruta_indice()
     if not destino.is_file():
         raise ErrorIndex(f'no existe el indice en {destino}, ejecuta index construir')
     conexion = sqlite3.connect(str(destino))
@@ -138,7 +143,7 @@ def actualizar_indice(raiz: Path, ruta_bd: Path | None = None) -> dict:
     safety.verificar_escritura('actualizar indice')
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
-    destino = ruta_indice()
+    destino = ruta_indice(raiz)
     conexion = _abrir(destino)
     actualizados = 0
     insertados = 0

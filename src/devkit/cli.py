@@ -12,6 +12,7 @@ from devkit.errors import ErrorBase
 from devkit.tools import backup as modulo_respaldo
 from devkit.tools import dedupe as modulo_dedupe
 from devkit.tools import nice as modulo_nice
+from devkit.tools import organize as modulo_organize
 from devkit.tools import trim as modulo_trim
 from devkit.tools.doctor import ejecutar_doctor
 from devkit.tools.health import ejecutar_salud
@@ -41,6 +42,11 @@ app_nice = typer.Typer(
     help='Ejecuta hijos con prioridad baja y registro de memoria.',
 )
 app.add_typer(app_nice, name='nice')
+app_organize = typer.Typer(
+    no_args_is_help=True,
+    help='Clasificacion por extension, firma y año con plan previo.',
+)
+app.add_typer(app_organize, name='organize')
 
 
 def mostrar_version(valor: bool) -> None:
@@ -330,6 +336,67 @@ def comando_dedupe_aplicar(
         resultado = modulo_dedupe.aplicar_dedupe(raiz, edad_dias, ignorar)
     except ErrorBase as fallo:
         salir_con_error('dedupe aplicar', fallo, formato)
+        return
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
+
+
+@app_organize.command('plan')
+def comando_organize_plan(
+    raiz: Path = typer.Argument(..., help='Carpeta que se quiere organizar.'),
+    destino: Path | None = typer.Option(
+        None, '--destino', '-d', help='Carpeta Organizados (por defecto raiz/Organizados).'
+    ),
+    no_ignorar_onedrive: bool = typer.Option(
+        False,
+        '--no-ignorar-onedrive',
+        help='Permite entrar en rutas de OneDrive.',
+    ),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Genera el plan en solo lectura y lo muestra sin tocar el disco.
+    try:
+        ignorar = not no_ignorar_onedrive
+        resultado = modulo_organize.escanear_organize(raiz, destino, 0, ignorar)
+    except ErrorBase as fallo:
+        salir_con_error('organize plan', fallo, formato)
+        return
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
+
+
+@app_organize.command('aplicar')
+def comando_organize_aplicar(
+    raiz: Path = typer.Argument(..., help='Carpeta que se quiere organizar.'),
+    destino: Path | None = typer.Option(
+        None, '--destino', '-d', help='Carpeta Organizados.'
+    ),
+    todos: bool = typer.Option(
+        False, '--todos', '-t', help='Mueve todos sin confirmar uno a uno.'
+    ),
+    por_archivo: bool = typer.Option(
+        False,
+        '--por-archivo',
+        help='Pregunta archivo por archivo (s/n/a/t).',
+    ),
+    no_ignorar_onedrive: bool = typer.Option(
+        False,
+        '--no-ignorar-onedrive',
+        help='Permite entrar en rutas de OneDrive.',
+    ),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Solo mueve cuando el usuario acepta con --todos o confirma archivo por archivo.
+    if not todos and not por_archivo:
+        typer.echo('sin --todos ni --por-archivo no se aplica el plan', err=True)
+        raise typer.Exit(code=2)
+    try:
+        ignorar = not no_ignorar_onedrive
+        resultado = modulo_organize.aplicar_organize(
+            raiz, destino, 0, ignorar, todos, por_archivo
+        )
+    except ErrorBase as fallo:
+        salir_con_error('organize aplicar', fallo, formato)
         return
     emitir(resultado, formato=formato)
     raise typer.Exit(code=resultado['codigo'])

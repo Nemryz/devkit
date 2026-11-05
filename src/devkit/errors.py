@@ -37,3 +37,7 @@ class ErrorLimpieza(ErrorBase):
 
 class ErrorDuplicados(ErrorBase):
     pass
+
+
+class ErrorOrganizar(ErrorBase):
+    pass

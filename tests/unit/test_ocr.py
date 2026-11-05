@@ -4,6 +4,11 @@ import pytest
 from devkit.errors import ErrorOCR, ErrorSoloLectura
 from devkit.tools import ocr
 
+SIN_TESSERACT = pytest.mark.skipif(
+    ocr._tesseract() is None,
+    reason='Tesseract no disponible en este entorno',
+)
+
 
 def crear_imagen(ruta, texto="Hola"):
     from PIL import Image, ImageDraw
@@ -44,6 +49,7 @@ def test_recolectar_respeta_onedrive(tmp_path, monkeypatch):
     assert len(ocr.recolectar_archivos(tmp_path, False)) >= 1
 
 
+@SIN_TESSERACT
 def test_escanear_devuelve_metricas(estado_temporal, tmp_path):
     pytest.importorskip("pytesseract")
     crear_imagen(tmp_path / "foto.png", "Hola")
@@ -53,6 +59,7 @@ def test_escanear_devuelve_metricas(estado_temporal, tmp_path):
     assert resultado["total_palabras"] >= 0
 
 
+@SIN_TESSERACT
 def test_escanear_solo_lectura_no_escribe(estado_temporal, tmp_path):
     pytest.importorskip("pytesseract")
     ruta = crear_imagen(tmp_path / "foto.png", "Hola")
@@ -61,6 +68,7 @@ def test_escanear_solo_lectura_no_escribe(estado_temporal, tmp_path):
     assert ruta.stat().st_mtime == antes
 
 
+@SIN_TESSERACT
 def test_exportar_genera_nota_origen_ocr(estado_temporal, tmp_path):
     pytest.importorskip("pytesseract")
     crear_imagen(tmp_path / "doc.png", "Hola mundo")

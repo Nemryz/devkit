@@ -163,17 +163,6 @@ def construir_plan(candidatos: list[dict], tope: int = TOPE_BYTES) -> dict:
     }
 
 
-def _mover_a_papelera(ruta: Path) -> None:
-    # La unica escritura destructiva pasa por send2trash tras verificar lectura.
-    # En tests se hace monkeypatch sobre esta funcion, por eso se mantiene.
-    import send2trash
-
-    try:
-        send2trash.send2trash(str(ruta))
-    except OSError as fallo:
-        raise ErrorLimpieza(f'no se pudo mover a papelera {ruta} porque {fallo}') from fallo
-
-
 def escanear_trim(raiz: Path, incluir_venv: bool = False, edad_dias: int = 7) -> dict:
     # Construye el plan sin tocar el disco y guarda su manifiesto persistente.
     inicio = time.perf_counter()
@@ -183,7 +172,8 @@ def escanear_trim(raiz: Path, incluir_venv: bool = False, edad_dias: int = 7) ->
     id_ejec = runlog.iniciar_ejecucion('trim', 'escanear', espacio_trabajo=str(base))
     ruta_plan = safety.guardar_plan(id_ejec, 'trim', plan['manifest'])
     runlog.registrar_ejecucion(
-        'trim', ['escanear'], inicio, 0, 0, 'escanear', espacio_trabajo=str(base), id_plan=id_ejec
+        'trim', ['escanear'], inicio, 0, 0, 'escanear',
+        espacio_trabajo=str(base), id_plan=id_ejec, id_ejecucion=id_ejec,
     )
     return {
         'herramienta': 'trim',
@@ -200,61 +190,37 @@ def escanear_trim(raiz: Path, incluir_venv: bool = False, edad_dias: int = 7) ->
     }
 
 
-def aplicar_trim(raiz: Path, incluir_venv: bool = False, edad_dias: int = 7) -> dict:
-    # Ejecuta el plan validando el manifiesto persistente sin reescanear el arbol de nuevo.
+def aplicar_trim(
+    raiz: Path,
+    incluir_venv: bool = False,
+    edad_dias: int = 7,
+    plan: Path | None = None,
+) -> dict:
+    # Aplica un manifiesto por el ejecutor unico, sin reescanear si ya existe.
     safety.verificar_escritura('limpiar caches')
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
-    candidatos = escanear(base, incluir_venv, edad_dias)
-    plan = construir_plan(candidatos)
-    id_ejec = runlog.iniciar_ejecucion('trim', 'aplicar', espacio_trabajo=str(base))
-    ruta_plan = safety.guardar_plan(id_ejec, 'trim', plan['manifest'])
-    validacion = safety._validar_arbol({'acciones': plan['manifest']})
-    if validacion:
-        safety.actualizar_estado_plan(ruta_plan, 'fallido')
-        runlog.registrar_ejecucion(
-            'trim', ['aplicar'], inicio, 2, 0, 'error', espacio_trabajo=str(base), id_plan=id_ejec
-        )
-        return {
-            'herramienta': 'trim',
-            'accion': 'aplicar',
-            'estado': 'error',
-            'codigo': 2,
-            'raiz': str(base),
-            'total_movidos': 0,
-            'total_bytes': 0,
-            'movidos': [],
-            'fallidos': validacion,
-            'plan_persistente': str(ruta_plan),
-            'fecha': datetime.now(UTC).isoformat(),
-            'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
-        }
-    movidos = []
-    fallidos = []
-    for accion in plan['acciones']:
-        ruta = Path(accion['ruta'])
-        try:
-            _mover_a_papelera(ruta)
-            movidos.append(accion)
-        except ErrorLimpieza as fallo:
-            fallidos.append({'ruta': str(ruta), 'detalle': str(fallo)})
-    estado = 'correcto' if not fallidos else 'error'
-    codigo = 0 if estado == 'correcto' else 2
-    plan_aplicado = 'aplicado' if estado == 'correcto' else 'fallido'
-    safety.actualizar_estado_plan(ruta_plan, plan_aplicado)
-    runlog.registrar_ejecucion(
-        'trim', ['aplicar'], inicio, codigo, 0, estado, espacio_trabajo=str(base), id_plan=id_ejec
-    )
+    ruta_plan = Path(plan).expanduser().resolve() if plan is not None else None
+    if ruta_plan is not None and not ruta_plan.is_file():
+        raise ErrorLimpieza(f'no existe el plan {ruta_plan}')
+    if ruta_plan is None:
+        escaneo = escanear_trim(base, incluir_venv, edad_dias)
+        ruta_plan = Path(escaneo['plan_persistente'])
+    resultado = safety.aplicar_manifiesto(ruta_plan, 'trim', espacio_trabajo=str(base))
+    estado = 'correcto' if not resultado['fallidos'] else 'error'
+    movidos = resultado['movidos']
     return {
         'herramienta': 'trim',
         'accion': 'aplicar',
         'estado': estado,
-        'codigo': codigo,
+        'codigo': resultado['codigo'],
         'raiz': str(base),
         'total_movidos': len(movidos),
-        'total_bytes': sum(item['tamano'] for item in movidos),
+        'total_bytes': sum(int(a.get('tamano', 0)) for a in movidos),
         'movidos': movidos,
-        'fallidos': fallidos,
+        'fallidos': resultado['fallidos'],
+        'estado_plan': resultado['estado_plan'],
+        'id_ejecucion': resultado['id_ejecucion'],
         'plan_persistente': str(ruta_plan),
         'fecha': datetime.now(UTC).isoformat(),
         'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),

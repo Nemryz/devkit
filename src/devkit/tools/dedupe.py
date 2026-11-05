@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from devkit.core import paths, runlog, safety
-from devkit.errors import ErrorDuplicados, ErrorLimpieza
+from devkit.errors import ErrorDuplicados
 
 # Carpetas que nunca entran en el escaneo, igual que en trim.
 CARPETAS_PROTEGIDAS = {'.git', '.idea', '.venv', '.vscode', 'src', 'tests'}
@@ -218,16 +218,6 @@ def construir_plan(grupos: list[dict], tope: int = TOPE_BYTES) -> dict:
     }
 
 
-def _mover_a_papelera(ruta: Path) -> None:
-    # send2trash es la unica escritura destructiva y siempre es reversible.
-    import send2trash
-
-    try:
-        send2trash.send2trash(str(ruta))
-    except OSError as fallo:
-        raise ErrorLimpieza(f'no se pudo mover a papelera {ruta} porque {fallo}') from fallo
-
-
 def escanear_dedupe(
     raiz: Path,
     edad_dias: int = 30,
@@ -243,7 +233,8 @@ def escanear_dedupe(
     id_ejec = runlog.iniciar_ejecucion('dedupe', 'escanear', espacio_trabajo=str(base))
     ruta_plan = safety.guardar_plan(id_ejec, 'dedupe', plan['acciones'])
     runlog.registrar_ejecucion(
-        'dedupe', ['escanear'], inicio, 0, 0, 'escanear', espacio_trabajo=str(base), id_plan=id_ejec
+        'dedupe', ['escanear'], inicio, 0, 0, 'escanear',
+        espacio_trabajo=str(base), id_plan=id_ejec, id_ejecucion=id_ejec,
     )
     return {
         'herramienta': 'dedupe',
@@ -269,66 +260,33 @@ def aplicar_dedupe(
     edad_dias: int = 30,
     ignorar_onedrive: bool = True,
     tope: int = TOPE_BYTES,
+    plan: Path | None = None,
 ) -> dict:
-    # Ejecuta el plan validando el manifiesto persistente antes de tocar la papelera.
+    # Aplica un manifiesto por el ejecutor unico, sin reescanear si ya existe.
     safety.verificar_escritura('mover duplicados')
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
-    archivos = recolectar_archivos(base, ignorar_onedrive, edad_dias)
-    grupos = construir_grupos(archivos)
-    plan = construir_plan(grupos, tope)
-    id_ejec = runlog.iniciar_ejecucion('dedupe', 'aplicar', espacio_trabajo=str(base))
-    ruta_plan = safety.guardar_plan(id_ejec, 'dedupe', plan['acciones'])
-    validacion = safety._validar_arbol({'acciones': plan['acciones']})
-    if validacion:
-        safety.actualizar_estado_plan(ruta_plan, 'fallido')
-        runlog.registrar_ejecucion(
-            'dedupe', ['aplicar'], inicio, 2, 0, 'error', espacio_trabajo=str(base), id_plan=id_ejec
-        )
-        return {
-            'herramienta': 'dedupe',
-            'accion': 'aplicar',
-            'estado': 'error',
-            'codigo': 2,
-            'raiz': str(base),
-            'total_movidos': 0,
-            'total_bytes': 0,
-            'movidos': [],
-            'fallidos': validacion,
-            'plan_persistente': str(ruta_plan),
-            'fecha': datetime.now(UTC).isoformat(),
-            'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
-        }
-    movidos = []
-    fallidos = []
-    for accion in plan['acciones']:
-        ruta = Path(accion['origen'])
-        # Si el arbol cambio entre el plan y la accion, se aborta con aviso.
-        if not ruta.is_file():
-            fallidos.append({'ruta': accion['origen'], 'detalle': 'ya no existe'})
-            continue
-        try:
-            _mover_a_papelera(ruta)
-            movidos.append(accion)
-        except ErrorLimpieza as fallo:
-            fallidos.append({'ruta': accion['origen'], 'detalle': str(fallo)})
-    estado = 'correcto' if not fallidos else 'error'
-    codigo = 0 if estado == 'correcto' else 2
-    plan_aplicado = 'aplicado' if estado == 'correcto' else 'fallido'
-    safety.actualizar_estado_plan(ruta_plan, plan_aplicado)
-    runlog.registrar_ejecucion(
-        'dedupe', ['aplicar'], inicio, codigo, 0, estado, espacio_trabajo=str(base), id_plan=id_ejec
-    )
+    ruta_plan = Path(plan).expanduser().resolve() if plan is not None else None
+    if ruta_plan is not None and not ruta_plan.is_file():
+        raise ErrorDuplicados(f'no existe el plan {ruta_plan}')
+    if ruta_plan is None:
+        escaneo = escanear_dedupe(base, edad_dias, ignorar_onedrive, tope)
+        ruta_plan = Path(escaneo['plan_persistente'])
+    resultado = safety.aplicar_manifiesto(ruta_plan, 'dedupe', espacio_trabajo=str(base))
+    movidos = resultado['movidos']
+    estado = 'correcto' if not resultado['fallidos'] else 'error'
     return {
         'herramienta': 'dedupe',
         'accion': 'aplicar',
         'estado': estado,
-        'codigo': codigo,
+        'codigo': resultado['codigo'],
         'raiz': str(base),
         'total_movidos': len(movidos),
-        'total_bytes': sum(item['tamano'] for item in movidos),
+        'total_bytes': sum(int(a.get('tamano', 0)) for a in movidos),
         'movidos': movidos,
-        'fallidos': fallidos,
+        'fallidos': resultado['fallidos'],
+        'estado_plan': resultado['estado_plan'],
+        'id_ejecucion': resultado['id_ejecucion'],
         'plan_persistente': str(ruta_plan),
         'fecha': datetime.now(UTC).isoformat(),
         'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),

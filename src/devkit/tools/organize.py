@@ -198,16 +198,6 @@ def construir_plan(raiz: Path, destino: Path, archivos: list[Path]) -> dict:
     }
 
 
-def _mover(origen: Path, destino: Path) -> None:
-    # Mueve pasando por el guardian centralizado de safety.ejecutar_plan.
-    plan = safety.Plan()
-    plan.agregar(safety.Accion(tipo='mover', origen=str(origen), destino=str(destino)))
-    resultado = safety.ejecutar_plan(plan, 'organizar archivos')
-    if resultado['fallos']:
-        detalle = resultado['fallos'][0]['detalle']
-        raise ErrorOrganizar(f'no se pudo mover {origen} a {destino} porque {detalle}')
-
-
 def escanear_organize(
     raiz: Path,
     destino: Path | None = None,
@@ -227,7 +217,8 @@ def escanear_organize(
     id_ejec = runlog.iniciar_ejecucion('organize', 'plan', espacio_trabajo=str(base))
     ruta_plan = safety.guardar_plan(id_ejec, 'organize', plan['manifest'])
     runlog.registrar_ejecucion(
-        'organize', ['plan'], inicio, 0, 0, 'plan', espacio_trabajo=str(base), id_plan=id_ejec
+        'organize', ['plan'], inicio, 0, 0, 'plan',
+        espacio_trabajo=str(base), id_plan=id_ejec, id_ejecucion=id_ejec,
     )
     return {
         'herramienta': 'organize',
@@ -269,23 +260,19 @@ def _confirmar(accion: dict, siempre: bool) -> bool:
     return respuesta != 'a'
 
 
-def _ejecutar_acciones(
-    manifiesto: list[dict],
-    siempre: bool,
-    movidos: list[dict],
-    fallidos: list[dict],
-) -> None:
-    # Confirma campo por campo y aplica cada movimiento pasando por el guardian.
-    for accion in manifiesto:
-        accion['_todos'] = siempre
-        if _confirmar(accion, siempre):
-            if accion.get('_todos') is True:
-                siempre = True
-            try:
-                _mover(Path(accion['origen']), Path(accion['destino']))
-                movidos.append({k: v for k, v in accion.items() if not k.startswith('_')})
-            except ErrorOrganizar as fallo:
-                fallidos.append({'ruta': accion['origen'], 'detalle': str(fallo)})
+def _autorizar_por_archivo(siempre: bool):
+    # Hook de autorizacion del ejecutor unico que delega cada paso en _confirmar.
+    estado = {'siempre': siempre}
+
+    def autorizar(accion: dict) -> bool:
+        pregunta = dict(accion)
+        respuesta = _confirmar(pregunta, estado['siempre'])
+        if pregunta.get('_todos'):
+            # La respuesta t del usuario cambia el resto de la tanda a aceptadas.
+            estado['siempre'] = True
+        return respuesta
+
+    return autorizar
 
 
 def aplicar_organize(
@@ -297,7 +284,7 @@ def aplicar_organize(
     por_archivo: bool = False,
     plan_persistente: Path | None = None,
 ) -> dict:
-    # Aplica el manifiesto validado sin reescanear el arbol cuando ya existe un plan.
+    # Aplica un manifiesto por el ejecutor unico, sin reescanear si ya existe.
     safety.verificar_escritura('organizar archivos')
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
@@ -310,66 +297,32 @@ def aplicar_organize(
 
         if not sys.stdin.isatty():
             raise ErrorOrganizar('sin --todos ni tty no se puede confirmar archivo por archivo')
-    if plan_persistente is not None:
-        plan = safety.cargar_plan(plan_persistente)
-        manifiesto = plan.get('acciones', [])
-        id_ejec = str(plan.get('id_ejecucion', plan_persistente.stem))
-        ruta_plan = plan_persistente
-    else:
-        archivos = recolectar_archivos(base, ignorar_onedrive, edad_dias)
-        archivos = [ruta for ruta in archivos if carpeta_destino not in ruta.resolve().parents]
-        plan_local = construir_plan(base, carpeta_destino, archivos)
-        manifiesto = plan_local['manifest']
-        id_ejec = runlog.iniciar_ejecucion('organize', 'aplicar', espacio_trabajo=str(base))
-        ruta_plan = safety.guardar_plan(id_ejec, 'organize', manifiesto)
-    validacion = safety._validar_arbol({'acciones': manifiesto})
-    if validacion:
-        safety.actualizar_estado_plan(ruta_plan, 'fallido')
-        runlog.registrar_ejecucion(
-            'organize', ['aplicar'], inicio, 2, 0, 'error',
-            espacio_trabajo=str(base), id_plan=id_ejec,
-        )
-        return {
-            'herramienta': 'organize',
-            'accion': 'aplicar',
-            'estado': 'error',
-            'codigo': 2,
-            'raiz': str(base),
-            'destino': str(carpeta_destino),
-            'total_movidos': 0,
-            'total_bytes': 0,
-            'movidos': [],
-            'fallidos': validacion,
-            'plan_persistente': str(ruta_plan),
-            'fecha': datetime.now(UTC).isoformat(),
-            'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
-        }
-    movidos: list[dict] = []
-    fallidos: list[dict] = []
-    _ejecutar_acciones(manifiesto, todos, movidos, fallidos)
-    estado = 'correcto' if not fallidos else 'error'
-    codigo = 0 if estado == 'correcto' else 2
-    plan_aplicado = 'aplicado' if estado == 'correcto' else 'fallido'
-    safety.actualizar_estado_plan(ruta_plan, plan_aplicado)
-    runlog.registrar_ejecucion(
-        'organize', ['aplicar'], inicio, codigo, 0, estado,
-        espacio_trabajo=str(base), id_plan=id_ejec,
+    ruta_plan = Path(plan_persistente).expanduser().resolve() if plan_persistente else None
+    if ruta_plan is not None and not ruta_plan.is_file():
+        raise ErrorOrganizar(f'no existe el plan {ruta_plan}')
+    if ruta_plan is None:
+        escaneo = escanear_organize(base, destino, edad_dias, ignorar_onedrive)
+        ruta_plan = Path(escaneo['plan_persistente'])
+    autorizar = None if todos else _autorizar_por_archivo(False)
+    resultado = safety.aplicar_manifiesto(
+        ruta_plan, 'organize', espacio_trabajo=str(base), autorizar=autorizar
     )
+    movidos = resultado['movidos']
+    fallidos = resultado['fallidos']
+    estado = 'correcto' if not fallidos else 'error'
     return {
         'herramienta': 'organize',
         'accion': 'aplicar',
         'estado': estado,
-        'codigo': codigo,
+        'codigo': resultado['codigo'],
         'raiz': str(base),
         'destino': str(carpeta_destino),
         'total_movidos': len(movidos),
-        'total_bytes': sum(
-            Path(m['origen']).stat().st_size if Path(m['origen']).exists() else 0 for m in movidos
-        )
-        if movidos
-        else 0,
+        'total_bytes': sum(int(a.get('tamano', 0)) for a in movidos),
         'movidos': movidos,
         'fallidos': fallidos,
+        'estado_plan': resultado['estado_plan'],
+        'id_ejecucion': resultado['id_ejecucion'],
         'plan_persistente': str(ruta_plan),
         'fecha': datetime.now(UTC).isoformat(),
         'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),

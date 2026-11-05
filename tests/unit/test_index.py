@@ -11,10 +11,9 @@ def crear_nota(raiz, titulo, cuerpo, estado='activo'):
     return idea.crear_nota(raiz, titulo, cuerpo, [estado], estado)
 
 
-def test_ruta_indice_por_defecto_en_estado():
-
+def test_ruta_indice_por_defecto_en_estado(estado_temporal):
     ruta = index.ruta_indice()
-    assert 'devkit' in str(ruta)
+    assert ruta.parent == estado_temporal
     assert str(ruta).endswith('index.sqlite')
 
 
@@ -95,7 +94,7 @@ def test_construir_indice_rechaza_raiz_invalida(tmp_path):
         index.construir_indice(tmp_path / 'no-existe')
 
 
-def test_ruta_indice_por_defecto(tmp_path):
+def test_ruta_indice_por_defecto(estado_temporal):
     ruta = index.ruta_indice()
     assert str(ruta).endswith('index.sqlite')
-    assert 'devkit' in str(ruta)
+    assert ruta.parent == estado_temporal

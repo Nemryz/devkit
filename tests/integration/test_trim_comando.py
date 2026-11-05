@@ -7,6 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from devkit.cli import app
+from devkit.core import safety
 from devkit.errors import ErrorLimpieza, ErrorSoloLectura
 from devkit.tools import trim
 
@@ -64,7 +65,9 @@ def test_comando_aplicar_sin_forzar_no_toca(estado_temporal, tmp_path):
 def test_aplicar_mueve_a_papelera(estado_temporal, tmp_path, monkeypatch):
     raiz = crear_arbol(tmp_path / 'proyecto')
     movimientos = []
-    monkeypatch.setattr(trim, '_mover_a_papelera', lambda ruta: movimientos.append(str(ruta)))
+    monkeypatch.setattr(
+        safety, 'mover_a_papelera_from_safety', lambda ruta: movimientos.append(str(ruta))
+    )
     resultado = trim.aplicar_trim(raiz, edad_dias=7)
     assert resultado['estado'] == 'correcto'
     assert resultado['total_movidos'] >= 2
@@ -93,7 +96,7 @@ def test_aplicar_registra_fallidos_sin_abortar(estado_temporal, tmp_path, monkey
         movimientos.append(str(ruta))
 
     movimientos = []
-    monkeypatch.setattr(trim, '_mover_a_papelera', fallar_some)
+    monkeypatch.setattr(safety, 'mover_a_papelera_from_safety', fallar_some)
     resultado = trim.aplicar_trim(raiz, edad_dias=7)
     assert resultado['estado'] == 'error'
     assert len(resultado['fallidos']) >= 1

@@ -294,6 +294,11 @@ def comando_trim_aplicar(
     forzar: bool = typer.Option(
         False, '--forzar', help='Aplica el plan moviendo a la papelera de Windows.'
     ),
+    plan: Path | None = typer.Option(
+        None,
+        '--plan',
+        help='Aplica el manifiesto guardado por trim escanear sin reescanear.',
+    ),
     formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
 ) -> None:
     # Solo mueve a papelera cuando el usuario acepta con --forzar.
@@ -301,7 +306,7 @@ def comando_trim_aplicar(
         typer.echo('sin --forzar no se aplica el plan, usa trim escanear', err=True)
         raise typer.Exit(code=2)
     try:
-        resultado = modulo_trim.aplicar_trim(raiz, incluir_venv, edad_dias)
+        resultado = modulo_trim.aplicar_trim(raiz, incluir_venv, edad_dias, plan)
     except ErrorBase as fallo:
         salir_con_error('trim aplicar', fallo, formato)
         return
@@ -343,6 +348,11 @@ def comando_dedupe_aplicar(
     forzar: bool = typer.Option(
         False, '--forzar', help='Aplica el plan moviendo a la papelera de Windows.'
     ),
+    plan: Path | None = typer.Option(
+        None,
+        '--plan',
+        help='Aplica el manifiesto guardado por dedupe escanear sin reescanear.',
+    ),
     formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
 ) -> None:
     # Solo mueve a papelera cuando el usuario acepta con --forzar.
@@ -351,7 +361,7 @@ def comando_dedupe_aplicar(
         raise typer.Exit(code=2)
     try:
         ignorar = not no_ignorar_onedrive
-        resultado = modulo_dedupe.aplicar_dedupe(raiz, edad_dias, ignorar)
+        resultado = modulo_dedupe.aplicar_dedupe(raiz, edad_dias, ignorar, plan=plan)
     except ErrorBase as fallo:
         salir_con_error('dedupe aplicar', fallo, formato)
         return

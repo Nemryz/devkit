@@ -40,6 +40,22 @@ Después de agregar el PATH, reiniciar la consola. Para automatizar la instalaci
 .\install.ps1
 ```
 
+El script sincroniza dependencias, instala el paquete, descubre el directorio de ejecutables de uv dinámicamente y configura el PATH del usuario.
+
+### Instalación empaquetada (producción)
+
+Por defecto, `install.ps1` instala el paquete empaquetado (no editable). El repositorio fuente puede moverse o eliminarse sin romper la instalación:
+
+```powershell
+.\install.ps1
+```
+
+Para desarrollo (editable):
+
+```powershell
+.\install.ps1 --editable
+```
+
 ### Reinstalar o actualizar
 
 ```powershell
@@ -60,7 +76,7 @@ dev doctor
 dev doctor --formato tabla
 ```
 
-Revisa versión de Python, dependencias del núcleo, memoria disponible, espacio libre, carpeta de estado, journal, OneDrive, rutas largas y elevación. Devuelve JSON por defecto.
+Revisa versión de Python, dependencias del núcleo, memoria disponible, espacio libre, carpeta de estado, journal, OneDrive, rutas largas y elevación.
 
 ### health
 
@@ -98,7 +114,7 @@ dev trim aplicar C:\Proyectos --forzar
 dev trim aplicar C:\Proyectos --forzar --edad-dias 14
 ```
 
-Detecta carpetas de cache (__pycache__, .pytest_cache, .ruff_cache, .mypy_cache, build, dist, htmlcov, node_modules) y archivos temporales (.log, .pyc, .pyo, .tmp). Excluye .git, src y tests. Respeta DEVKIT_READONLY. El plan incluye manifiesto firmado para aplicar sin reescanear el árbol en Bloque D.
+Detecta carpetas de cache (__pycache__, .pytest_cache, .ruff_cache, .mypy_cache, build, dist, htmlcov, node_modules) y archivos temporales (.log, .pyc, .pyo, .tmp). Excluye .git, src y tests. Respeta DEVKIT_READONLY. El plan incluye manifiesto firmado para aplicar sin reescanear el árbol.
 
 ### dedupe
 
@@ -110,7 +126,7 @@ dev dedupe escanear C:\Proyectos --edad-dias 60
 dev dedupe aplicar C:\Proyectos --forzar
 ```
 
-Agrupa por tamaño, calcula prehash parcial (primeros 8 KB) y hash completo con BLAKE3. Conserva la ruta más corta y, a igualdad, el archivo más antiguo. Incluye resumen por extensión y filtro de OneDrive. El plan incluye manifiesto firmado para Bloque D.
+Agrupa por tamaño, calcula prehash parcial (primeros 8 KB) y hash completo con BLAKE3. Conserva la ruta más corta y, a igualdad, el archivo más antiguo. Incluye resumen por extensión y filtro de OneDrive. El plan incluye manifiesto firmado para aplicar sin reescanear.
 
 ### organize
 
@@ -122,7 +138,7 @@ dev organize aplicar --todos C:\Descargas
 dev organize aplicar --por-archivo C:\Descargas
 ```
 
-Detecta el tipo real por magic number (JPEG, PNG, PDF, ZIP, MP3, MP4, etc.) y cae a la extensión si no hay firma. Organiza en `Organizados/<año>/<tipo>/<nombre>`. Resuelve colisiones con `_2`, `_3`. El plan incluye manifiesto firmado para Bloque D.
+Detecta el tipo real por magic number (JPEG, PNG, PDF, ZIP, MP3, MP4, etc.) y cae a la extensión si no hay firma. Organiza en `Organizados/<año>/<tipo>/<nombre>`. Resuelve colisiones con `_2`, `_3`. El plan incluye manifiesto firmado.
 
 ### idea
 
@@ -139,7 +155,7 @@ Crea archivos con frontmatter (titulo, creado, etiquetas, estado, origen). Valid
 
 ### index
 
-Índice SQLite con FTS5 sobre las notas Markdown.
+Índice SQLite con FTS5 sobre las notas Markdown. Cada espacio de trabajo tiene su propio índice aislado.
 
 ```powershell
 dev index construir C:\FutureProjects\notas
@@ -149,7 +165,7 @@ dev index actualizar C:\FutureProjects\notas
 dev index exportar C:\FutureProjects\export.json --raiz C:\FutureProjects\notas
 ```
 
-Construye un índice FTS5 (tokenize unicode61) sobre título y cuerpo. Permite buscar con fragmentos resaltados. Actualiza de forma incremental por mtime. Exporta a JSON. El índice vive en `%LOCALAPPDATA%\devkit\index.sqlite`.
+Construye un índice FTS5 (tokenize unicode61) sobre título y cuerpo en `<raiz>/.devkit/index.sqlite`. Permite buscar con fragmentos resaltados. Actualiza de forma incremental por mtime. Exporta a JSON. Buscar sin `--raiz` usa el índice del directorio actual.
 
 ### nice
 
@@ -174,6 +190,62 @@ dev ocr exportar C:\Documentos --destino C:\OCR
 ```
 
 Extrae texto de imágenes y PDFs con Tesseract 5.5.3. Renderiza PDFs a 150 dpi con PyMuPDF. Calcula confianza media, mínima y conteo de palabras por página. Exporta notas con origen ocr listas para idea e index. No mueve, borra ni clasifica archivos. Respeta DEVKIT_READONLY.
+
+## Perfiles de almacenamiento
+
+DevKit resuelve sus ubicaciones de estado según un perfil activo. La precedencia es: variables de entorno > config.toml > perfil activo > platformdirs.
+
+### Perfiles disponibles
+
+| Perfil | Descripción |
+|--------|-------------|
+| global | Estado en `%LOCALAPPDATA%\devkit`, configuración en `%APPDATA%\devkit` (predeterminado) |
+| portable | Estado junto a la instalación |
+| custom | Rutas especificadas explícitamente por el usuario |
+| temporary | Almacenamiento temporal, sin persistencia entre sesiones |
+
+### Variables de entorno
+
+| Variable | Efecto |
+|----------|--------|
+| DEVKIT_ESTADO | Redirige la carpeta de estado |
+| DEVKIT_CONFIG | Redirige la carpeta de configuración |
+| DEVKIT_CACHE | Redirige la carpeta de cache |
+| DEVKIT_PLANES | Redirige la carpeta de planes |
+| DEVKIT_TEMP | Redirige la carpeta temporal |
+| DEVKIT_PROYECTOS | Redirige la carpeta de proyectos |
+| DEVKIT_WORKSPACE | Define el espacio de trabajo activo |
+| DEVKIT_PERFIL | Fuerza un perfil (global, portable, custom, temporary) |
+| DEVKIT_READONLY | Activa modo de solo lectura (1, true, si, yes, on) |
+| DEVKIT_CLAVE | Clave para respaldos cifrados |
+
+### Ejemplo de config.toml
+
+```toml
+raices = []
+retencion_dias = 180
+idioma = "es"
+perfil = "global"
+
+[storage]
+state = "D:/DevKit/state"
+config = "D:/DevKit/config"
+cache = "D:/DevKit/cache"
+plans = "D:/DevKit/plans"
+journal = "D:/DevKit/journal"
+```
+
+## Espacios de trabajo
+
+Cada espacio de trabajo tiene su propio índice SQLite en `<raiz>/.devkit/index.sqlite`. Dos espacios de trabajo no contaminan sus índices.
+
+```powershell
+dev index construir C:\Proyectos\A
+dev index construir C:\Proyectos\B
+dev index buscar python --raiz C:\Proyectos\A
+```
+
+La búsqueda en un espacio no devuelve resultados de otro. El índice es rebuildable y no sincroniza con OneDrive.
 
 ## Escenarios de uso
 
@@ -263,13 +335,45 @@ dev index buscar contrato
 
 OCR es solo lectura: no mueve, borra ni clasifica. Genera notas con origen ocr listas para indexar.
 
+### Escenario 7: ejecutar desde cualquier carpeta
+
+DevKit no depende de dónde reside. Funciona desde cualquier directorio.
+
+```powershell
+cd C:\
+dev --version
+dev doctor
+dev health
+```
+
+### Escenario 8: dos espacios de trabajo sin contaminación
+
+Dos proyectos con el mismo nombre en diferentes unidades no mezclan sus índices.
+
+```powershell
+dev index construir D:\Proyectos\A\notas
+dev index construir E:\Proyectos\A\notas
+dev index buscar python --raiz D:\Proyectos\A\notas
+```
+
+### Escenario 9: reinstalar sin perder datos
+
+La instalación empaquetada permite mover o eliminar el repositorio fuente sin perder configuración ni estado.
+
+```powershell
+.\install.ps1
+# Mover el repositorio a otra carpeta
+# dev sigue funcionando
+dev --version
+```
+
 ## Análisis técnico por herramienta
 
 ### backup
 
 Flujo interno: valida orígenes y destino, recorre sin seguir enlaces, calcula SHA-256 por archivo, empaqueta en tar, comprime con 7z (AES-256, cabecera cifrada), escribe manifiesto JSON, limpia el tar temporal.
 
-Seguridad: la contraseña se pasa por entrada estándar, nunca por línea de comandos. Verificación extrae en carpeta temporal y compara hashes. Restauración comprueba integridad al terminar.
+Seguridad: la contraseña se pasa por entrada estándar, nunca por línea de comandos. Verificación extrae en carpeta temporal y compara hashes. Restauración comprueba integridad al terminar. El plan se firma con SHA-256.
 
 Casos de uso: respaldo antes de reinstalar, copia a USB, migración entre equipos.
 
@@ -277,7 +381,7 @@ Casos de uso: respaldo antes de reinstalar, copia a USB, migración entre equipo
 
 Flujo interno: recorre sin seguir enlaces, detecta carpetas y archivos por nombre y sufijo, filtra por antigüedad, aplica tope de bytes por pasada, construye plan, ejecuta moviendo a papelera.
 
-Seguridad: excluye .git, src, tests. No sigue enlaces simbólicos. Respeta DEVKIT_READONLY. El plan se firma con SHA-256 y se guarda en planes para aplicar sin reescanear.
+Seguridad: excluye .git, src, tests. No sigue enlaces simbólicos. Respeta DEVKIT_READONLY. El plan se firma con SHA-256 y se guarda en planes para aplicar sin reescanear. Si el árbol cambia entre plan y aplicación, se aborta con aviso.
 
 Casos de uso: limpiar caches después de desarrollo, liberar espacio antes de backup, mantenimiento periódico.
 
@@ -285,7 +389,7 @@ Casos de uso: limpiar caches después de desarrollo, liberar espacio antes de ba
 
 Flujo interno: agrupa por tamaño (descarta únicos), prehash parcial (8 KB), hash completo con BLAKE3, selecciona conservar por ruta más corta y fecha más antigua, construye plan con tope, ejecuta moviendo a papelera.
 
-Seguridad: excluye .git, src, tests. No sigue enlaces. Filtra OneDrive por defecto. El plan se firma y se guarda. Si el árbol cambia entre plan y aplicación, aborta con aviso.
+Seguridad: excluye .git, src, tests. No sigue enlaces. Filtra OneDrive por defecto. El plan se firma y se guarda. Si el árbol cambia entre plan y aplicación, se aborta con aviso.
 
 Casos de uso: liberar espacio en discos llenos, limpiar carpetas de fotos duplicadas, mantenimiento de archivos de trabajo.
 
@@ -293,7 +397,7 @@ Casos de uso: liberar espacio en discos llenos, limpiar carpetas de fotos duplic
 
 Flujo interno: recorre sin seguir enlaces, detecta tipo por magic number y extensión, calcula año por mtime, propone ruta Organizados/<año>/<tipo>/<nombre>, resuelve colisiones, construye plan, ejecuta moviendo.
 
-Seguridad: excluye .git, src, tests. No sigue enlaces. Respeta DEVKIT_READONLY. El plan se firma. Sin --todos ni --por-archivo no se aplica nada. Sin tty, --por-archivo aborta.
+Seguridad: excluye .git, src, tests. No sigue enlaces. Respeta DEVKIT_READONLY. El plan se firma. Sin --todos ni --por-archivo no se aplica nada. Sin tty, --por-archivo aborta. Pasa por el guardián centralizado.
 
 Casos de uso: organizar descargas, clasificar por año y tipo, preparar archivos para archivo.
 
@@ -307,7 +411,7 @@ Casos de uso: diagnóstico rápido, verificar estado antes de operaciones pesada
 
 ### idea
 
-Flujo interno: crea notas con frontmatter validado, revisa enlaces rotos, lista por estado. Genera nombre con slug y fecha. Avisa duplicados.
+Flujo interno: crea notas con frontmatter validado, revisa enlaces rotos, lista por estado. Genera nombre con slug y fecha. Avisa duplicados. El campo origen admite manual, ocr, scrape e importado.
 
 Seguridad: respeta DEVKIT_READONLY. Solo escribe en la raíz indicada. Valida campos obligatorios.
 
@@ -315,25 +419,25 @@ Casos de uso: capturar ideas, documentar proyectos, mantener notas organizadas.
 
 ### index
 
-Flujo interno: construye SQLite con FTS5 (unicode61) sobre título y cuerpo. Busca con snippet. Actualiza por mtime. Exporta a JSON.
+Flujo interno: construye SQLite con FTS5 (unicode61) sobre título y cuerpo en `<raiz>/.devkit/index.sqlite`. Busca con snippet. Actualiza por mtime. Exporta a JSON. Cada espacio de trabajo tiene su propio índice aislado.
 
-Seguridad: el índice vive en %LOCALAPPDATA%, no en FutureProjects. Es rebuildable. Respeta DEVKIT_READONLY.
+Seguridad: el índice vive en el espacio de trabajo, no en el perfil global. Es rebuildable. Respeta DEVKIT_READONLY.
 
 Casos de uso: buscar en notas, encontrar referencias, exportar para revisión.
 
 ### nice
 
-Flujo interno: lanza proceso con subprocess, aplica prioridad, mide memoria pico con hilo, captura stdout/stderr, mata si timeout, cierra Job.
+Flujo interno: lanza proceso con subprocess, aplica prioridad, mide memoria pico con hilo mientras corre, captura stdout/stderr, mata si timeout, cierra Job.
 
-Seguridad: mata al hijo si falla la prioridad. Tiempo máximo obligatorio. Job Object para límite de memoria (cuando el kernel lo acepta).
+Seguridad: mata al hijo si falla la prioridad. Tiempo máximo obligatorio. Job Object para límite de memoria (cuando el kernel lo acepta). Registra pico en el journal.
 
 Casos de uso: ejecutar scripts largos sin bloquear, procesar archivos pesados, tareas de OCR.
 
 ### ocr
 
-Flujo interno: recorre sin seguir enlaces, detecta imágenes y PDFs, renderiza PDFs a 150 dpi con PyMuPDF, ejecuta Tesseract, calcula confianza por palabra/página, genera notas con origen ocr.
+Flujo interno: recorre sin seguir enlaces, detecta imágenes y PDFs, renderiza PDFs a 150 dpi con PyMuPDF, ejecuta Tesseract, calcula confianza por palabra y página, genera notas con origen ocr.
 
-Seguridad: solo lectura, no mueve/borra/clasifica. Respeta DEVKIT_READONLY. Tiempo por documento vía nice.
+Seguridad: solo lectura, no mueve/borra/clasifica. Respeta DEVKIT_READONLY. Tiempo por documento vía nice. El binario de Tesseract se verifica antes de usarlo.
 
 Casos de uso: digitalizar documentos escaneados, extraer texto de PDFs, preparar notas para indexar.
 
@@ -343,13 +447,13 @@ El núcleo concentra lo que comparten todas las herramientas y no contiene lógi
 
 | Módulo | Responsabilidad |
 |--------|-----------------|
-| paths.py | Rutas del sistema, detección de OneDrive, rutas extendidas |
-| safety.py | Modo solo lectura, guardián centralizado, planes persistentes firmados |
+| paths.py | Rutas del sistema, detección de OneDrive, rutas extendidas, perfiles de almacenamiento, platformdirs |
+| safety.py | Modo solo lectura, guardián centralizado, planes persistentes firmados con SHA-256 |
 | runlog.py | Journal transaccional (PENDING, RUNNING, COMPLETED, FAILED, INTERRUPTED) |
 | output.py | JSON y tabla legible |
 | proceso.py | Procesos con prioridad baja y Job Object |
 | sistema.py | Información del sistema operativo |
-| config.py | Configuración persistente en TOML |
+| config.py | Configuración persistente en TOML con sección storage |
 | errors.py | Excepciones con códigos de salida estables |
 | markdown.py | Parser de frontmatter, slugify, enlaces rotos |
 
@@ -359,6 +463,8 @@ El código, los comentarios y los mensajes visibles están en español. Los iden
 
 El journal es transaccional y los planes tienen manifiesto firmado para aplicar sin reescanear. Las comprobaciones de salud usan ok, aviso, error y unknown para no fingir salud cuando no hay datos.
 
+DevKit no depende de dónde reside, solo de los recursos que necesita para ejecutar sus operaciones. Las herramientas no presuponen que el directorio de trabajo es el directorio de instalación. Los datos de un espacio de trabajo no contaminan los de otro. Las operaciones destructivas respetan las políticas de seguridad. Las interrupciones no dejan estados ambiguos sin posibilidad de diagnóstico.
+
 ## Pruebas
 
 ```powershell
@@ -366,7 +472,7 @@ uv run pytest
 uv run ruff check .
 ```
 
-179 pruebas en verde. Todas usan el sistema de archivos real sobre carpetas temporales, sin mocks del sistema de archivos. Integración continua en Windows con uv sync --locked, ruff y pytest.
+211 pruebas en verde. Todas usan el sistema de archivos real sobre carpetas temporales, sin mocks del sistema de archivos. Integración continua en Windows con uv sync --locked, ruff y pytest. Pruebas de independencia de ubicación verifican ejecución desde cualquier carpeta y aislamiento de workspaces.
 
 ## Documentación
 

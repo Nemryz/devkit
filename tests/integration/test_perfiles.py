@@ -139,7 +139,22 @@ def test_perfil_en_storage_gana_sobre_niveles_superiores(tmp_path, monkeypatch):
     assert paths.perfil_activo() == 'portable'
 
 
-def test_alias_estado_por_perfil_siguiendo_la_misma_resolucion(tmp_path, monkeypatch):
+def test_perfil_invalido_en_variable_falla_de_forma_explicita(tmp_path, monkeypatch):
     _entorno_config(tmp_path, monkeypatch)
-    monkeypatch.setenv('DEVKIT_PERFIL', 'portable')
-    assert paths.directorio_estado_por_perfil() == paths.directorio_estado()
+    monkeypatch.setenv('DEVKIT_PERFIL', 'portble')
+    with pytest.raises(ErrorConfiguracion):
+        paths.perfil_activo()
+
+
+def test_perfil_invalido_en_config_falla_de_forma_explicita(tmp_path, monkeypatch):
+    carpeta = _entorno_config(tmp_path, monkeypatch)
+    (carpeta / 'config.toml').write_text('perfil = "portble"\n', encoding='utf-8')
+    with pytest.raises(ErrorConfiguracion):
+        paths.perfil_activo()
+
+
+def test_perfil_invalido_en_storage_de_config_falla_de_forma_explicita(tmp_path, monkeypatch):
+    carpeta = _entorno_config(tmp_path, monkeypatch)
+    (carpeta / 'config.toml').write_text('[storage]\nperfil = "portble"\n', encoding='utf-8')
+    with pytest.raises(ErrorConfiguracion):
+        paths.perfil_activo()

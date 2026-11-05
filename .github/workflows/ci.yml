@@ -12,3 +12,12 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run pytest
+  paquete:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build
+      - run: uv venv .venv-paquete
+      - run: uv pip install --python .venv-paquete/Scripts/python.exe (Get-ChildItem dist/*.whl).FullName
+      - run: .venv-paquete/Scripts/dev.exe --version

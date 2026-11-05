@@ -108,7 +108,7 @@ def test_paths_sin_rutas_personales():
 
 def test_perfil_activo_por_defecto():
     # El perfil por defecto debe ser global.
-    assert paths.perfil_activo() in {'global', 'portable', 'custom', 'temporary'}
+    assert paths.perfil_activo() == 'global'
 
 
 def test_directorio_cache_existe():

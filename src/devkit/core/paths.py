@@ -68,10 +68,14 @@ def _ruta_de(valor) -> Path | None:
 def _perfil_de(config) -> str:
     # Deriva el perfil activo desde la variable de entorno y desde el propio config.toml.
     personal = os.environ.get(VARIABLE_PERFIL, '').strip().lower()
-    if personal in PERFILES:
+    if personal:
+        if personal not in PERFILES:
+            raise ErrorConfiguracion(f'perfil de almacenamiento invalido: {personal}')
         return personal
     del_toml = str(config.storage.perfil or config.perfil or '').strip().lower()
-    if del_toml in PERFILES:
+    if del_toml:
+        if del_toml not in PERFILES:
+            raise ErrorConfiguracion(f'perfil de almacenamiento invalido: {del_toml}')
         return del_toml
     return 'global'
 

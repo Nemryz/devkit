@@ -528,7 +528,7 @@ def comando_index_exportar(
 ) -> None:
     # Exporta el indice a JSON para revisarlo fuera de SQLite.
     try:
-        bd = modulo_index.ruta_indice(raiz)
+        bd = modulo_index.ruta_indice(modulo_index.raiz_efectiva(raiz), crear=False)
         resultado = modulo_index.exportar_indice(bd, salida)
     except ErrorBase as fallo:
         salir_con_error('index exportar', fallo, formato)

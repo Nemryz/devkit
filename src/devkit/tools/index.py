@@ -22,12 +22,30 @@ def validar_raiz(raiz: Path | str) -> Path:
     return ruta
 
 
-def ruta_indice(raiz: Path | None = None) -> Path:
-    # El indice vive en el espacio de trabajo si se proporciona raiz.
+def raiz_efectiva(raiz: Path | None = None) -> Path:
+    # Precedencia del espacio de trabajo: raiz dada, DEVKIT_WORKSPACE, luego el directorio actual.
+    if raiz is not None:
+        return validar_raiz(raiz)
+    activo = paths.workspace_activo()
+    if activo is not None:
+        return validar_raiz(activo)
+    return validar_raiz(Path.cwd())
+
+
+def ruta_indice(raiz: Path | None = None, crear: bool = True) -> Path:
+    # El indice vive dentro del espacio de trabajo si se proporciona raiz.
     if raiz is not None:
         base = Path(raiz).expanduser().resolve()
         carpeta_devkit = base / '.devkit'
-        carpeta_devkit.mkdir(parents=True, exist_ok=True)
+        if crear:
+            try:
+                carpeta_devkit.mkdir(parents=True, exist_ok=True)
+            except OSError as fallo:
+                raise ErrorIndex(
+                    f'no se puede crear la carpeta de indice en {base} porque {fallo}'
+                ) from fallo
+        elif not carpeta_devkit.is_dir():
+            raise ErrorIndex(f'no existe el indice de {base}, ejecuta index construir')
         return carpeta_devkit / NOMBRE_BD
     return paths.directorio_estado() / NOMBRE_BD
 
@@ -35,7 +53,8 @@ def ruta_indice(raiz: Path | None = None) -> Path:
 def _abrir(ruta: Path) -> sqlite3.Connection:
     # Abre la base con FTS5 habilitado y crea las tablas si faltan.
     ruta.parent.mkdir(parents=True, exist_ok=True)
-    conexion = sqlite3.connect(str(ruta))
+    # El timeout serializa procesos simultaneos en lugar de fallar con base bloqueada.
+    conexion = sqlite3.connect(str(ruta), timeout=5.0)
     conexion.execute(
         'CREATE VIRTUAL TABLE IF NOT EXISTS notas_fts USING fts5('
         'titulo, cuerpo, ruta, tokenize="unicode61")'
@@ -92,7 +111,9 @@ def construir_indice(raiz: Path, ruta_bd: Path | None = None) -> dict:
         insertados += 1
     conexion.commit()
     conexion.close()
-    runlog.registrar_ejecucion('index', ['construir'], inicio, 0, 0, 'construir')
+    runlog.registrar_ejecucion(
+        'index', ['construir'], inicio, 0, 0, 'construir', espacio_trabajo=str(base)
+    )
     return {
         'herramienta': 'index',
         'accion': 'construir',
@@ -109,7 +130,8 @@ def construir_indice(raiz: Path, ruta_bd: Path | None = None) -> dict:
 def buscar(raiz: Path | None, termino: str, estado: str | None = None, limite: int = 20) -> dict:
     # Consulta FTS5 y devuelve fragmentos con el termino resaltado.
     inicio = time.perf_counter()
-    destino = ruta_indice(raiz) if raiz else ruta_indice()
+    # Sin raiz el indice se resuelve en el workspace activo o en el directorio actual.
+    destino = ruta_indice(raiz_efectiva(raiz), crear=False)
     if not destino.is_file():
         raise ErrorIndex(f'no existe el indice en {destino}, ejecuta index construir')
     conexion = sqlite3.connect(str(destino))
@@ -183,7 +205,9 @@ def actualizar_indice(raiz: Path, ruta_bd: Path | None = None) -> dict:
     conexion.commit()
     total = conexion.execute('SELECT COUNT(*) FROM notas').fetchone()[0]
     conexion.close()
-    runlog.registrar_ejecucion('index', ['actualizar'], inicio, 0, 0, 'actualizar')
+    runlog.registrar_ejecucion(
+        'index', ['actualizar'], inicio, 0, 0, 'actualizar', espacio_trabajo=str(base)
+    )
     return {
         'herramienta': 'index',
         'accion': 'actualizar',

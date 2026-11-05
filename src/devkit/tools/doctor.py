@@ -13,6 +13,7 @@ import psutil
 
 from devkit import __version__
 from devkit.core import paths, runlog, sistema
+from devkit.errors import ErrorConfiguracion
 
 DEPENDENCIAS = ('typer', 'rich', 'psutil', 'pydantic', 'orjson')
 RAM_AVISO_GB = 1.0
@@ -71,26 +72,39 @@ def comprobar_disco() -> dict:
 
 def comprobar_estado() -> dict:
     # Confirma que la carpeta de estado existe y acepta escritura.
-    destino = paths.directorio_estado()
-    prueba = destino / 'prueba-escritura.tmp'
+    try:
+        destino = paths.directorio_estado()
+        prueba = destino / 'prueba-escritura.tmp'
+    except (OSError, ErrorConfiguracion) as fallo:
+        detalle = f'no se puede resolver el estado del toolkit porque {fallo}'
+        return _resultado('estado', 'error', detalle)
     try:
         paths.asegurar_directorio(destino)
         prueba.write_text('ok', encoding='utf-8')
         prueba.unlink()
-    except OSError as fallo:
+    except (OSError, ErrorConfiguracion) as fallo:
         detalle = f'no se puede escribir en {destino} porque {fallo}'
         return _resultado('estado', 'error', detalle, str(destino))
     return _resultado('estado', 'ok', f'carpeta {destino}', str(destino))
 
 
 def comprobar_journal() -> dict:
-    # Comprueba que el registro de ejecuciones se pueda crear y contar.
+    # Comprueba el journal y recupera las ejecuciones que quedaron abiertas.
     try:
         paths.asegurar_directorio(paths.directorio_journal())
         total = runlog.contar_ejecuciones()
-    except OSError as fallo:
-        return _resultado('journal', 'error', f'no se puede preparar el journal porque {fallo}')
-    return _resultado('journal', 'ok', f'{total} ejecuciones registradas', total)
+        recuperadas = runlog.recuperar_interrumpidas()
+    except (OSError, ErrorConfiguracion) as fallo:
+        detalle = f'no se puede preparar el journal porque {fallo}'
+        return _resultado('journal', 'error', detalle)
+    detalle = f'{total} ejecuciones registradas'
+    estado = 'ok'
+    if recuperadas:
+        detalle += f', {len(recuperadas)} interrumpidas marcadas'
+        estado = 'aviso'
+    fila = _resultado('journal', estado, detalle, total)
+    fila['interrumpidas'] = recuperadas
+    return fila
 
 
 def comprobar_onedrive() -> dict:

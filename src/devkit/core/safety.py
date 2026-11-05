@@ -43,7 +43,7 @@ def guardar_plan(
     # Guarda el manifiesto del plan para aplicar despues sin reescanear.
     from devkit.core import paths
 
-    base = destino_dir or (paths.directorio_estado() / 'planes')
+    base = destino_dir or (paths.directorio_planes())
     base.mkdir(parents=True, exist_ok=True)
     firma = firmar_plan(acciones)
     datos = {

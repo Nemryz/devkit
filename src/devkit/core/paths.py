@@ -1,15 +1,28 @@
 # Resolucion de las rutas conocidas del sistema y del estado del toolkit.
+# Precedencia al resolver: variable de entorno, config.toml, perfil activo, raices del sistema.
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 
 import platformdirs
+
+from devkit.errors import ErrorConfiguracion
 
 NOMBRE_ESTADO = 'devkit'
 NOMBRE_CONFIG = 'devkit'
 VARIABLE_ESTADO = 'DEVKIT_ESTADO'
 VARIABLE_CONFIG = 'DEVKIT_CONFIG'
+VARIABLE_CACHE = 'DEVKIT_CACHE'
+VARIABLE_PLANES = 'DEVKIT_PLANES'
+VARIABLE_TEMP = 'DEVKIT_TEMP'
+VARIABLE_PROYECTOS = 'DEVKIT_PROYECTOS'
+VARIABLE_WORKSPACE = 'DEVKIT_WORKSPACE'
+VARIABLE_PERFIL = 'DEVKIT_PERFIL'
+
+# Perfiles admitidos por el resolvedor de almacenamiento.
+PERFILES = ('global', 'portable', 'custom', 'temporary')
 
 
 def raiz_local() -> Path:
@@ -28,23 +41,90 @@ def raiz_remota() -> Path:
     return Path.home() / 'AppData' / 'Roaming'
 
 
+def _raiz_instalacion() -> Path:
+    # Localiza la raiz de instalacion del paquete para el perfil portable.
+    for candidato in Path(__file__).resolve().parents:
+        if (candidato / 'pyproject.toml').is_file():
+            return candidato
+    # Sin checkout del proyecto el paquete vive dentro de site-packages.
+    return Path(__file__).resolve().parents[2]
+
+
+def _raiz_temporaria() -> Path:
+    # Carpeta raiz del perfil temporary dentro del directorio temporal del sistema.
+    return Path(tempfile.gettempdir()) / 'devkit'
+
+
+def _ruta_de(valor) -> Path | None:
+    # Convierte un valor de config.toml en ruta cuando es un texto util.
+    if valor is None:
+        return None
+    texto = str(valor).strip()
+    if not texto:
+        return None
+    return Path(texto).expanduser()
+
+
+def _perfil_de(config) -> str:
+    # Deriva el perfil activo desde la variable de entorno y desde el propio config.toml.
+    personal = os.environ.get(VARIABLE_PERFIL, '').strip().lower()
+    if personal in PERFILES:
+        return personal
+    del_toml = str(config.storage.perfil or config.perfil or '').strip().lower()
+    if del_toml in PERFILES:
+        return del_toml
+    return 'global'
+
+
+def perfil_activo() -> str:
+    # Nombre del perfil que gobernara el resolvedor en esta llamada.
+    from devkit.config import cargar_configuracion
+
+    return _perfil_de(cargar_configuracion())
+
+
 def directorio_estado() -> Path:
-    # Permite redirigir el estado en pruebas sin tocar el perfil real.
-    personalizado = os.environ.get(VARIABLE_ESTADO)
+    # Resuelve el estado respetando la capa de configuracion mas alta disponible.
+    del_env = os.environ.get(VARIABLE_ESTADO)
+    if del_env:
+        return Path(del_env).expanduser()
+    from devkit.config import cargar_configuracion
+
+    config = cargar_configuracion()
+    personalizado = _ruta_de(config.storage.state)
     if personalizado:
-        return Path(personalizado).expanduser()
+        return personalizado
+    perfil = _perfil_de(config)
+    if perfil == 'portable':
+        return _raiz_instalacion() / '.devkit' / 'estado'
+    if perfil == 'temporary':
+        return _raiz_temporaria() / 'estado'
+    if perfil == 'custom':
+        raise ErrorConfiguracion('el perfil custom exige [storage] state en config.toml')
     return raiz_local() / NOMBRE_ESTADO
 
 
 def directorio_config() -> Path:
-    # Permite redirigir la configuracion en pruebas sin tocar el perfil real.
-    personalizado = os.environ.get(VARIABLE_CONFIG)
-    if personalizado:
-        return Path(personalizado).expanduser()
+    # La carpeta de configuracion no puede depender del propio config.toml, solo del entorno.
+    del_env = os.environ.get(VARIABLE_CONFIG)
+    if del_env:
+        return Path(del_env).expanduser()
+    personal = os.environ.get(VARIABLE_PERFIL, '').strip().lower()
+    if personal == 'portable':
+        return _raiz_instalacion() / '.devkit' / 'config'
+    if personal == 'temporary':
+        return _raiz_temporaria() / 'config'
     return raiz_remota() / NOMBRE_CONFIG
 
 
 def directorio_journal() -> Path:
+    # El journal sigue al estado y solo se desvia cuando config.toml define su ruta.
+    from devkit.config import cargar_configuracion
+
+    config = cargar_configuracion()
+    personalizado = _ruta_de(config.storage.journal)
+    if personalizado:
+        return personalizado
     return directorio_estado() / 'journal'
 
 
@@ -55,6 +135,71 @@ def ruta_journal() -> Path:
 def directorio_respaldos() -> Path:
     # Los respaldos viven junto al estado hasta que exista un volumen secundario.
     return directorio_estado() / 'backups'
+
+
+def directorio_cache() -> Path:
+    # Resuelve la cache con la precedencia completa de capas.
+    del_env = os.environ.get(VARIABLE_CACHE)
+    if del_env:
+        return Path(del_env).expanduser()
+    from devkit.config import cargar_configuracion
+
+    config = cargar_configuracion()
+    personalizado = _ruta_de(config.storage.cache)
+    if personalizado:
+        return personalizado
+    perfil = _perfil_de(config)
+    if perfil == 'temporary':
+        return _raiz_temporaria() / 'cache'
+    if perfil == 'global':
+        return Path(platformdirs.user_cache_dir('devkit', 'devkit'))
+    # portable y custom cuelgan del estado ya resuelto por perfil.
+    return directorio_estado() / 'cache'
+
+
+def directorio_planes() -> Path:
+    # Resuelve la carpeta de planes con la misma precedencia de capas.
+    del_env = os.environ.get(VARIABLE_PLANES)
+    if del_env:
+        return Path(del_env).expanduser()
+    from devkit.config import cargar_configuracion
+
+    config = cargar_configuracion()
+    personalizado = _ruta_de(config.storage.plans)
+    if personalizado:
+        return personalizado
+    if _perfil_de(config) == 'temporary':
+        return _raiz_temporaria() / 'planes'
+    return directorio_estado() / 'planes'
+
+
+def directorio_temporal() -> Path:
+    # Resuelve la carpeta temporal de ejecucion, independiente del almacenamiento del perfil.
+    del_env = os.environ.get(VARIABLE_TEMP)
+    if del_env:
+        return Path(del_env).expanduser()
+    return Path(tempfile.gettempdir()) / 'devkit-tmp'
+
+
+def directorio_proyectos() -> Path:
+    # Resuelve la carpeta de proyectos sin hardcodear rutas personales.
+    del_env = os.environ.get(VARIABLE_PROYECTOS)
+    if del_env:
+        return Path(del_env).expanduser()
+    return Path.home() / 'Projects'
+
+
+def workspace_activo() -> Path | None:
+    # Devuelve la carpeta de trabajo activa cuando DEVKIT_WORKSPACE esta definido.
+    del_env = os.environ.get(VARIABLE_WORKSPACE)
+    if del_env:
+        return Path(del_env).expanduser().resolve()
+    return None
+
+
+def directorio_estado_por_perfil() -> Path:
+    # Alias mantenido por compatibilidad porque directorio_estado ya aplica el perfil.
+    return directorio_estado()
 
 
 def asegurar_directorio(ruta: Path) -> Path:
@@ -85,98 +230,3 @@ def ruta_larga(ruta: Path) -> str:
     if texto.startswith('\\\\'):
         return '\\\\?\\UNC\\' + texto[2:]
     return '\\\\?\\' + texto
-
-
-# --- Perfiles de almacenamiento (Bloque 2) ---
-
-
-VARIABLE_WORKSPACE = 'DEVKIT_WORKSPACE'
-VARIABLE_PERFIL = 'DEVKIT_PERFIL'
-
-
-def perfil_activo() -> str:
-    # Lee el perfil de config.toml o de la variable de entorno.
-    personalizado = os.environ.get(VARIABLE_PERFIL, '').strip().lower()
-    if personalizado in {'global', 'portable', 'custom', 'temporary'}:
-        return personalizado
-    try:
-        from devkit.config import cargar_configuracion
-
-        config = cargar_configuracion()
-        perfil = getattr(config, 'perfil', 'global')
-        if perfil in {'global', 'portable', 'custom', 'temporary'}:
-            return perfil
-    except Exception:  # noqa: BLE001
-        pass
-    return 'global'
-
-
-def directorio_cache() -> Path:
-    # Resuelve la carpeta de cache segun el perfil activo.
-    personalizado = os.environ.get('DEVKIT_CACHE')
-    if personalizado:
-        return Path(personalizado).expanduser()
-    perfil = perfil_activo()
-    if perfil == 'portable':
-        return directorio_estado() / 'cache'
-    if perfil == 'temporary':
-        import tempfile
-
-        return Path(tempfile.gettempdir()) / 'devkit-cache'
-    # global y custom usan platformdirs.
-    return Path(platformdirs.user_cache_dir('devkit', 'devkit'))
-
-
-def directorio_planes() -> Path:
-    # Resuelve la carpeta de planes segun el perfil activo.
-    personalizado = os.environ.get('DEVKIT_PLANES')
-    if personalizado:
-        return Path(personalizado).expanduser()
-    perfil = perfil_activo()
-    if perfil == 'portable':
-        return directorio_estado() / 'planes'
-    if perfil == 'temporary':
-        import tempfile
-
-        return Path(tempfile.gettempdir()) / 'devkit-planes'
-    return directorio_estado() / 'planes'
-
-
-def directorio_temporal() -> Path:
-    # Resuelve la carpeta temporal de ejecucion.
-    import tempfile
-
-    personalizado = os.environ.get('DEVKIT_TEMP')
-    if personalizado:
-        return Path(personalizado).expanduser()
-    return Path(tempfile.gettempdir()) / 'devkit-tmp'
-
-
-def directorio_proyectos() -> Path:
-    # Resuelve la carpeta de proyectos sin hardcodear rutas personales.
-    personalizado = os.environ.get('DEVKIT_PROYECTOS')
-    if personalizado:
-        return Path(personalizado).expanduser()
-    return Path.home() / 'Projects'
-
-
-def workspace_activo() -> Path | None:
-    # Devuelve la carpeta de trabajo actual si DEVKIT_WORKSPACE esta definido.
-    personalizado = os.environ.get(VARIABLE_WORKSPACE)
-    if personalizado:
-        return Path(personalizado).expanduser().resolve()
-    return None
-
-
-def directorio_estado_por_perfil() -> Path:
-    # Resuelve el directorio de estado segun el perfil activo.
-    perfil = perfil_activo()
-    if perfil == 'portable':
-        # En portable, el estado vive junto a la instalacion.
-        return directorio_estado()
-    if perfil == 'temporary':
-        import tempfile
-
-        return Path(tempfile.gettempdir()) / 'devkit-state'
-    # global y custom usan el directorio de estado normal.
-    return directorio_estado()

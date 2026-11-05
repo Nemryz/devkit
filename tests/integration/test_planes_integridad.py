@@ -1,5 +1,6 @@
 # Pruebas de integridad de los manifiestos y de las precondiciones de cada movimiento.
 import json
+import os
 
 import pytest
 
@@ -53,7 +54,27 @@ def test_plan_detecta_cambio_de_contenido_con_mismo_tamano(tmp_path, monkeypatch
     assert 'cambio de contenido' in fallos[0]['detalle']
 
 
-def test_plan_detecta_origen_inexistente(tmp_path):
+def test_plan_detecta_cambio_de_contenido_con_mismo_tamano_y_mtime(tmp_path):
+    origen = tmp_path / 'a.txt'
+    destino = tmp_path / 'b.txt'
+    origen.write_text('hola5', encoding='utf-8')
+    mtime = origen.stat().st_mtime
+    manifiesto = [
+        {
+            'origen': str(origen),
+            'destino': str(destino),
+            'tipo': 'mover',
+            'tamano': 5,
+            'mtime': mtime,
+            'hash': safety.hash_contenido(origen),
+        }
+    ]
+    # Mismo tamano y mtime, distinto contenido: el hash lo detecta.
+    origen.write_text('chaos', encoding='utf-8')
+    os.utime(origen, (mtime, mtime))
+    fallos = safety._validar_arbol({'acciones': manifiesto})
+    assert fallos
+    assert 'cambio de contenido' in fallos[0]['detalle']
     manifiesto = [{'origen': str(tmp_path / 'fantasma.txt'), 'destino': '', 'tipo': 'papelera'}]
     fallos = safety._validar_arbol({'acciones': manifiesto})
     assert fallos and 'ya no existe' in fallos[0]['detalle']

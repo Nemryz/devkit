@@ -198,6 +198,10 @@ def construir_plan(grupos: list[dict], tope: int = TOPE_BYTES) -> dict:
                 modificado = Path(ruta).stat().st_mtime
             except OSError:
                 modificado = 0
+            try:
+                firma_contenido = safety.hash_contenido(Path(ruta))
+            except OSError:
+                firma_contenido = None
             acciones.append(
                 {
                     'tipo': 'papelera',
@@ -205,6 +209,7 @@ def construir_plan(grupos: list[dict], tope: int = TOPE_BYTES) -> dict:
                     'conservar': grupo['conservar'],
                     'tamano': grupo['tamano'],
                     'mtime': modificado,
+                    'hash': firma_contenido,
                     'extension': ext,
                 }
             )

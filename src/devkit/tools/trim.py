@@ -153,6 +153,7 @@ def construir_plan(candidatos: list[dict], tope: int = TOPE_BYTES) -> dict:
         if a['tipo'] == 'archivo':
             with suppress(OSError):
                 fila['mtime'] = Path(a['ruta']).stat().st_mtime
+                fila['hash'] = safety.hash_contenido(Path(a['ruta']))
         candidatos.append(fila)
     return {
         'acciones': seleccion,

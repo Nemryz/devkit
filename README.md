@@ -393,7 +393,7 @@ Casos de uso: respaldo antes de reinstalar, copia a USB, migración entre equipo
 
 Flujo interno: recorre sin seguir enlaces, detecta carpetas y archivos por nombre y sufijo, filtra por antigüedad, aplica tope de bytes por pasada, construye plan, ejecuta moviendo a papelera.
 
-Seguridad: excluye .git, src, tests. No sigue enlaces simbólicos. Respeta DEVKIT_READONLY. El plan se firma con SHA-256 cubriendo origen, tamaño y mtime de cada fila, y se guarda en planes con estado pendiente, aplicado o fallido. Antes de tocar nada valida que cada elemento sigue existiendo con el mismo tamaño y contenido, con destino solo para movimientos. Si el árbol cambia entre plan y aplicación, se aborta con aviso.
+Seguridad: excluye .git, src, tests. No sigue enlaces simbólicos. Respeta DEVKIT_READONLY. El plan se firma con SHA-256 cubriendo origen, tamaño, mtime y contenido (hash por archivo) de cada fila, y se guarda en planes con estado pendiente, aplicado o fallido. Antes de tocar nada valida que cada elemento sigue existiendo con el mismo tamaño, mtime y contenido, con destino solo para movimientos. Si el árbol cambia entre plan y aplicación, se aborta con aviso.
 
 Casos de uso: limpiar caches después de desarrollo, liberar espacio antes de backup, mantenimiento periódico.
 
@@ -401,7 +401,7 @@ Casos de uso: limpiar caches después de desarrollo, liberar espacio antes de ba
 
 Flujo interno: agrupa por tamaño (descarta únicos), prehash parcial (8 KB), hash completo con BLAKE3, selecciona conservar por ruta más corta y fecha más antigua, construye plan con tope, ejecuta moviendo a papelera.
 
-Seguridad: excluye .git, src, tests. No sigue enlaces. Filtra OneDrive por defecto. El plan se firma con SHA-256 cubriendo origen, tamaño y mtime, y se guarda con su estado. Antes de aplicar valida haya cambio de origen, tamaño o contenido, y aborta con aviso si el árbol cambió.
+Seguridad: excluye .git, src, tests. No sigue enlaces. Filtra OneDrive por defecto. El plan se firma con SHA-256 cubriendo origen, tamaño, mtime y contenido, y se guarda con su estado. Antes de aplicar valida que no haya cambio de origen, tamaño, mtime ni contenido, y aborta con aviso si el árbol cambió.
 
 Casos de uso: liberar espacio en discos llenos, limpiar carpetas de fotos duplicadas, mantenimiento de archivos de trabajo.
 
@@ -409,7 +409,7 @@ Casos de uso: liberar espacio en discos llenos, limpiar carpetas de fotos duplic
 
 Flujo interno: recorre sin seguir enlaces, detecta tipo por magic number y extensión, calcula año por mtime, propone ruta Organizados/<año>/<tipo>/<nombre>, resuelve colisiones, construye plan, ejecuta moviendo.
 
-Seguridad: excluye .git, src, tests. No sigue enlaces. Respeta DEVKIT_READONLY. El plan se firma con SHA-256 sobre origen, destino, tamaño y mtime. `plan` guarda el manifiesto persistente y `aplicar --plan` lo consume sin reescanear; sin plan previo, generar, guardar, validar y aplicar es un solo flujo. Valida cada movimiento contra destino ocupado y no sobrescribe nada. Sin --todos ni --por-archivo no se aplica nada. Sin tty, --por-archivo aborta. Pasa por el guardián centralizado.
+Seguridad: excluye .git, src, tests. No sigue enlaces. Respeta DEVKIT_READONLY. El plan se firma con SHA-256 sobre origen, destino, tamaño, mtime y contenido. `plan` guarda el manifiesto persistente y `aplicar --plan` lo consume sin reescanear; sin plan previo, generar, guardar, validar y aplicar es un solo flujo. Valida cada movimiento contra destino ocupado y no sobrescribe nada. Sin --todos ni --por-archivo no se aplica nada. Sin tty, --por-archivo aborta. Pasa por el guardián centralizado.
 
 Casos de uso: organizar descargas, clasificar por año y tipo, preparar archivos para archivo.
 
@@ -475,7 +475,7 @@ El código, los comentarios y los mensajes visibles están en español. Los iden
 
 Las rutas del estado se resuelven por capas: variable de entorno, config.toml en su sección storage, perfil activo y raíces del sistema. El perfil custom exige `state` en config.toml y un config.toml dañado o con tipos inválidos falla con error explícito, nunca con un fallback silencioso al perfil global.
 
-El journal es transaccional y los planes tienen manifiesto firmado para aplicar sin reescanear. Las comprobaciones de salud usan ok, aviso, error y unknown para no fingir salud cuando no hay datos.
+El journal es transaccional y los planes tienen manifiesto firmado para aplicar sin reescanear. La firma SHA-256 cubre tamaño, mtime y contenido de cada acción y se revalida justo antes de ejecutarla, por lo que un cambio de contenido que preserve tamaño y mtime se detecta. Esa firma es integridad accidental, no autenticación: detecta cambios involuntarios en el árbol, no manipulación maliciosa del plan, que podría recalcular el hash. Si la manipulación maliciosa entra en el modelo de amenazas, hará falta HMAC con clave secreta o un mecanismo equivalente. Queda una ventana residual de carrera entre la validación de un archivo y su movimiento (TOCTOU) que se reduce revalidando cada acción en el mismo instante en que se ejecuta. Las comprobaciones de salud usan ok, aviso, error y unknown para no fingir salud cuando no hay datos.
 
 DevKit no depende de dónde reside, solo de los recursos que necesita para ejecutar sus operaciones. Las herramientas no presuponen que el directorio de trabajo es el directorio de instalación. Los datos de un espacio de trabajo no contaminan los de otro. Las operaciones destructivas respetan las políticas de seguridad. Las interrupciones no dejan estados ambiguos sin posibilidad de diagnóstico.
 
@@ -486,7 +486,7 @@ uv run pytest
 uv run ruff check .
 ```
 
-254 pruebas en verde, con 2 pruebas omitidas sin Tesseract instalado (3 en la integración continua sin el binario). Todas usan el sistema de archivos real sobre carpetas temporales, sin mocks del sistema de archivos. Integración continua en Windows con uv sync --locked, ruff y pytest.
+268 pruebas en verde, con 2 pruebas omitidas sin Tesseract instalado (3 en la integración continua sin el binario). Todas usan el sistema de archivos real sobre carpetas temporales, sin mocks del sistema de archivos. Integración continua en Windows con uv sync --locked, ruff y pytest.
 
 Las pruebas de contrato cubren los escenarios que fijan el comportamiento prometido: precedencia de rutas por capas y perfiles de almacenamiento con fail loud, validación del manifiesto entre plan y aplicación con estados pendiente, aplicado y fallido, trazabilidad del journal con espacio de trabajo e id de plan y recuperación de ejecuciones interrumpidas, identidad de espacios de trabajo en el índice con resolución por raíz efectiva, concurrencia de escrituras en SQLite con WAL y transacciones inmediatas, y migración de configuraciones antiguas sin perder datos.
 

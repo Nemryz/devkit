@@ -185,6 +185,7 @@ def construir_plan(raiz: Path, destino: Path, archivos: list[Path]) -> dict:
                 'tipo': 'mover',
                 'tamano': datos.st_size if datos else 0,
                 'mtime': datos.st_mtime if datos else 0,
+                'hash': safety.hash_contenido(ruta) if (datos and ruta.exists()) else None,
             }
         )
     return {

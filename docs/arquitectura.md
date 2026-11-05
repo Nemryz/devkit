@@ -16,7 +16,7 @@ El estado vive en la carpeta local del perfil del usuario. El journal es la fuen
 
 ## Flujo de una operacion destructiva
 
-La herramienta construye un plan con las acciones previstas. Si el modo de solo lectura esta activo, la operacion se rechaza con codigo cuatro. Si el plan se aprueba, se firma con SHA-256, se guarda el manifiesto y cada accion se registra en el journal antes de ejecutarse. Un fallo a mitad deja el estado marcado como inconsistente y permite revertir lo aplicado. La validacion del arbol comprueba que cada archivo sigue existiendo con mismo tamano antes de moverlo.
+La herramienta construye un plan con las acciones previstas. Si el modo de solo lectura esta activo, la operacion se rechaza con codigo cuatro. Si el plan se aprueba, se firma con SHA-256, se guarda el manifiesto y cada accion se registra en el journal antes de ejecutarse. Un fallo a mitad deja el estado marcado como inconsistente y permite revertir lo aplicado. La validacion del arbol comprueba que cada archivo sigue existiendo con mismo tamano, mtime y contenido antes de moverlo.
 
 ## Salud sin falsos ok
 

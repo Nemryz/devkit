@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import time
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -79,40 +81,63 @@ def _extraer_nota(ruta: Path) -> tuple[str, str, int, float]:
     return titulo, cuerpo, len(cuerpo.split()), ruta.stat().st_mtime
 
 
-def construir_indice(raiz: Path, ruta_bd: Path | None = None) -> dict:
+def construir_indice(raiz: Path) -> dict:
     # Reconstruye el indice completo a partir de las notas existentes.
+    # La construccion se hace en un archivo temporal que se valida antes de
+    # sustituir el indice anterior, para no perderlo si algo falla a mitad.
     safety.verificar_escritura('construir indice')
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
     destino = ruta_indice(raiz)
-    if destino.exists():
-        try:
-            destino.unlink()
-        except OSError as fallo:
-            detalle = f'no se pudo limpiar el indice {destino} porque {fallo}'
-            raise ErrorIndex(detalle) from fallo
-    conexion = _abrir(destino)
+    temporal = destino.with_name(destino.name + '.tmp')
+    # Limpia restos de una construccion anterior interrumpida.
+    for sufijo in ('', '-wal', '-shm', '-journal'):
+        with suppress(OSError):
+            Path(str(temporal) + sufijo).unlink()
     insertados = 0
     actualizados = 0
-    for ruta in sorted(base.rglob('*.md')):
-        protegidas = {'.git', 'node_modules', '__pycache__'}
-        if any(parte in protegidas for parte in ruta.relative_to(base).parts):
-            continue
+    try:
+        conexion = _abrir(temporal)
         try:
-            titulo, cuerpo, palabras, mtime = _extraer_nota(ruta)
-        except OSError:
-            continue
-        conexion.execute(
-            'INSERT INTO notas (ruta, titulo, creado, palabras, mtime) VALUES (?, ?, ?, ?, ?)',
-            (str(ruta), titulo, str(datetime.now(UTC).date()), palabras, mtime),
-        )
-        conexion.execute(
-            'INSERT INTO notas_fts (titulo, cuerpo, ruta) VALUES (?, ?, ?)',
-            (titulo, cuerpo, str(ruta)),
-        )
-        insertados += 1
-    conexion.commit()
-    conexion.close()
+            for ruta in sorted(base.rglob('*.md')):
+                protegidas = {'.git', 'node_modules', '__pycache__'}
+                if any(parte in protegidas for parte in ruta.relative_to(base).parts):
+                    continue
+                try:
+                    titulo, cuerpo, palabras, mtime = _extraer_nota(ruta)
+                except OSError:
+                    continue
+                conexion.execute(
+                    'INSERT INTO notas (ruta, titulo, creado, palabras, mtime) '
+                    'VALUES (?, ?, ?, ?, ?)',
+                    (str(ruta), titulo, str(datetime.now(UTC).date()), palabras, mtime),
+                )
+                conexion.execute(
+                    'INSERT INTO notas_fts (titulo, cuerpo, ruta) VALUES (?, ?, ?)',
+                    (titulo, cuerpo, str(ruta)),
+                )
+                insertados += 1
+            conexion.commit()
+            # Fuerza el checkpoint y abandona el modo WAL para no dejar sidecars.
+            conexion.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+            conexion.execute('PRAGMA journal_mode=DELETE')
+            conexion.commit()
+            comprobacion = conexion.execute('PRAGMA integrity_check').fetchone()
+            if comprobacion is None or comprobacion[0] != 'ok':
+                raise ErrorIndex('el indice reconstruido no supera integrity_check')
+        finally:
+            conexion.close()
+        # Sustituye el indice anterior de forma atomica; limpia sidecars viejos.
+        for sufijo in ('-wal', '-shm', '-journal'):
+            with suppress(OSError):
+                Path(str(destino) + sufijo).unlink()
+        os.replace(str(temporal), str(destino))
+    except (OSError, ErrorIndex) as fallo:
+        for sufijo in ('', '-wal', '-shm', '-journal'):
+            with suppress(OSError):
+                Path(str(temporal) + sufijo).unlink()
+        detalle = f'no se pudo construir el indice {destino} porque {fallo}'
+        raise ErrorIndex(detalle) from fallo
     runlog.registrar_ejecucion(
         'index', ['construir'], inicio, 0, 0, 'construir', espacio_trabajo=str(base)
     )
@@ -162,7 +187,7 @@ def buscar(raiz: Path | None, termino: str, estado: str | None = None, limite: i
     }
 
 
-def actualizar_indice(raiz: Path, ruta_bd: Path | None = None) -> dict:
+def actualizar_indice(raiz: Path) -> dict:
     # Reconstruye solo las notas cuyo mtime cambio o que son nuevas.
     safety.verificar_escritura('actualizar indice')
     inicio = time.perf_counter()

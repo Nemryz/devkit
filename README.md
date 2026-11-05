@@ -486,7 +486,7 @@ uv run pytest
 uv run ruff check .
 ```
 
-268 pruebas en verde, con 2 pruebas omitidas sin Tesseract instalado (3 en la integración continua sin el binario). Todas usan el sistema de archivos real sobre carpetas temporales, sin mocks del sistema de archivos. Integración continua en Windows con uv sync --locked, ruff y pytest.
+270 pruebas en verde, con 2 pruebas omitidas sin Tesseract instalado (3 en la integración continua sin el binario). Todas usan el sistema de archivos real sobre carpetas temporales, sin mocks del sistema de archivos. Integración continua en Windows con uv sync --locked, ruff y pytest.
 
 Las pruebas de contrato cubren los escenarios que fijan el comportamiento prometido: precedencia de rutas por capas y perfiles de almacenamiento con fail loud, validación del manifiesto entre plan y aplicación con estados pendiente, aplicado y fallido, trazabilidad del journal con espacio de trabajo e id de plan y recuperación de ejecuciones interrumpidas, identidad de espacios de trabajo en el índice con resolución por raíz efectiva, concurrencia de escrituras en SQLite con WAL y transacciones inmediatas, y migración de configuraciones antiguas sin perder datos.
 

@@ -1,5 +1,7 @@
 # Pruebas del indice FTS5 sobre notas Markdown.
 
+from pathlib import Path
+
 import pytest
 
 from devkit.errors import ErrorIndex, ErrorSoloLectura
@@ -87,6 +89,35 @@ def test_exportar_indice(estado_temporal, tmp_path):
 
     datos = json.loads(salida.read_text(encoding='utf-8'))
     assert datos[0]['titulo'] == 'Exportable'
+
+
+def test_construir_indice_conserva_indice_anterior_si_falla(tmp_path, monkeypatch):
+    raiz = tmp_path / 'notas'
+    crear_nota(raiz, 'Primera', 'Texto sobre devkit')
+    index.construir_indice(raiz)
+    bd = index.ruta_indice(raiz)
+    contenido_original = bd.read_bytes()
+    temporal = bd.with_name(bd.name + '.tmp')
+
+    def fallar(*args, **kwargs):
+        raise OSError('fallo simulado')
+
+    monkeypatch.setattr(index.os, 'replace', fallar)
+    with pytest.raises(ErrorIndex):
+        index.construir_indice(raiz)
+    assert bd.is_file()
+    assert bd.read_bytes() == contenido_original
+    assert not temporal.exists()
+
+
+def test_construir_indice_limpia_sidecars_tras_reconstruir(tmp_path):
+    raiz = tmp_path / 'notas'
+    crear_nota(raiz, 'Primera', 'Texto sobre devkit')
+    index.construir_indice(raiz)
+    bd = index.ruta_indice(raiz)
+    assert bd.is_file()
+    for sufijo in ('-wal', '-shm', '-journal'):
+        assert not Path(str(bd) + sufijo).exists()
 
 
 def test_construir_indice_rechaza_raiz_invalida(tmp_path):

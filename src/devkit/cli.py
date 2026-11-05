@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -190,6 +191,57 @@ def comando_schema(
     }
     emitir(resultado, formato=formato)
     raise typer.Exit(code=resultado['codigo'])
+@app.command('buscar')
+def comando_buscar(
+    termino: str = typer.Argument(..., help='Termino a buscar e identificar.'),
+    raiz: Path | None = typer.Option(None, '--raiz', '-r', help='Carpeta de trabajo.'),
+    limite: int = typer.Option(20, '--limite', help='Maximo de resultados por fuente.'),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Busqueda e identificacion unificada para usuarios y agentes.
+    base = None
+    try:
+        base = modulo_index.raiz_efectiva(raiz)
+    except Exception:  # noqa: BLE001
+        base = raiz if raiz is not None else Path.cwd()
+    resultados: dict[str, Any] = {
+        'herramienta': 'devkit',
+        'accion': 'buscar',
+        'estado': 'correcto',
+        'codigo': 0,
+        'termino': termino,
+        'raiz': str(base),
+        'texto': None,
+        'archivos': None,
+        'duplicados': None,
+    }
+    # Texto en notas
+    try:
+        resultados['texto'] = modulo_index.buscar(base, termino, None, limite)
+    except Exception as fallo:  # noqa: BLE001
+        resultados['texto'] = {'estado': 'error', 'detalle': str(fallo)}
+    # Identificacion de archivos
+    try:
+        resultados['archivos'] = modulo_organize.escanear_organize(base)
+    except Exception as fallo:  # noqa: BLE001
+        resultados['archivos'] = {'estado': 'error', 'detalle': str(fallo)}
+    # Duplicados
+    try:
+        resultados['duplicados'] = modulo_dedupe.escanear_dedupe(base, edad_dias=30)
+    except Exception as fallo:  # noqa: BLE001
+        resultados['duplicados'] = {'estado': 'error', 'detalle': str(fallo)}
+    # Filtrar archivos por termino en el nombre
+    if isinstance(resultados['archivos'], dict) and 'acciones' in resultados['archivos']:
+        term_lower = termino.lower()
+        filtrados = [
+            a for a in resultados['archivos']['acciones']
+            if term_lower in str(a.get('origen', '')).lower()
+            or term_lower in str(a.get('nombre', '')).lower()
+        ]
+        resultados['archivos']['acciones_filtradas'] = filtrados
+        resultados['archivos']['total_filtrados'] = len(filtrados)
+    emitir(resultados, formato=formato)
+    raise typer.Exit(code=0)
 @app.command('doctor')
 def comando_doctor(
     formato: str = typer.Option(

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import time
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -146,13 +147,16 @@ def construir_plan(candidatos: list[dict], tope: int = TOPE_BYTES) -> dict:
             continue
         seleccion.append(candidato)
         total += candidato['tamano']
-    acciones = [
-        {'origen': a['ruta'], 'destino': '', 'tipo': 'papelera', 'tamano': a['tamano']}
-        for a in seleccion
-    ]
+    candidatos = []
+    for a in seleccion:
+        fila = {'origen': a['ruta'], 'destino': '', 'tipo': 'papelera', 'tamano': a['tamano']}
+        if a['tipo'] == 'archivo':
+            with suppress(OSError):
+                fila['mtime'] = Path(a['ruta']).stat().st_mtime
+        candidatos.append(fila)
     return {
         'acciones': seleccion,
-        'manifest': acciones,
+        'manifest': candidatos,
         'total': len(seleccion),
         'total_bytes': total,
         'omitidos': len(ordenados) - len(seleccion),
@@ -171,17 +175,16 @@ def _mover_a_papelera(ruta: Path) -> None:
 
 
 def escanear_trim(raiz: Path, incluir_venv: bool = False, edad_dias: int = 7) -> dict:
-    # Construye el plan sin tocar el disco y lo registra en el journal.
+    # Construye el plan sin tocar el disco y guarda su manifiesto persistente.
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
     candidatos = escanear(base, incluir_venv, edad_dias)
     plan = construir_plan(candidatos)
-    runlog.registrar_ejecucion('trim', ['escanear'], inicio, 0, 0, 'escanear')
-    # Guarda el manifiesto persistente para aplicar sin reescanear en Bloque D.
-    from devkit.core import runlog as _rl
-
-    id_ejec = _rl.iniciar_ejecucion('trim', 'escanear')
+    id_ejec = runlog.iniciar_ejecucion('trim', 'escanear', espacio_trabajo=str(base))
     ruta_plan = safety.guardar_plan(id_ejec, 'trim', plan['manifest'])
+    runlog.registrar_ejecucion(
+        'trim', ['escanear'], inicio, 0, 0, 'escanear', espacio_trabajo=str(base), id_plan=id_ejec
+    )
     return {
         'herramienta': 'trim',
         'accion': 'escanear',
@@ -198,27 +201,25 @@ def escanear_trim(raiz: Path, incluir_venv: bool = False, edad_dias: int = 7) ->
 
 
 def aplicar_trim(raiz: Path, incluir_venv: bool = False, edad_dias: int = 7) -> dict:
-    # Ejecuta el plan moviendo cada candidato a la papelera de Windows.
-    # En Bloque D se valida contra el manifiesto persistente sin reescanear.
+    # Ejecuta el plan validando el manifiesto persistente sin reescanear el arbol de nuevo.
     safety.verificar_escritura('limpiar caches')
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
     candidatos = escanear(base, incluir_venv, edad_dias)
     plan = construir_plan(candidatos)
-    from devkit.core import runlog as _rl
-
-    id_ejec = _rl.iniciar_ejecucion('trim', 'aplicar')
+    id_ejec = runlog.iniciar_ejecucion('trim', 'aplicar', espacio_trabajo=str(base))
     ruta_plan = safety.guardar_plan(id_ejec, 'trim', plan['manifest'])
-    validacion = safety._validar_arbol(plan)
+    validacion = safety._validar_arbol({'acciones': plan['manifest']})
     if validacion:
-        estado = 'error'
-        codigo = 2
-        runlog.registrar_ejecucion('trim', ['aplicar'], inicio, codigo, 0, estado)
+        safety.actualizar_estado_plan(ruta_plan, 'fallido')
+        runlog.registrar_ejecucion(
+            'trim', ['aplicar'], inicio, 2, 0, 'error', espacio_trabajo=str(base), id_plan=id_ejec
+        )
         return {
             'herramienta': 'trim',
             'accion': 'aplicar',
-            'estado': estado,
-            'codigo': codigo,
+            'estado': 'error',
+            'codigo': 2,
             'raiz': str(base),
             'total_movidos': 0,
             'total_bytes': 0,
@@ -239,7 +240,11 @@ def aplicar_trim(raiz: Path, incluir_venv: bool = False, edad_dias: int = 7) -> 
             fallidos.append({'ruta': str(ruta), 'detalle': str(fallo)})
     estado = 'correcto' if not fallidos else 'error'
     codigo = 0 if estado == 'correcto' else 2
-    runlog.registrar_ejecucion('trim', ['aplicar'], inicio, codigo, 0, estado)
+    plan_aplicado = 'aplicado' if estado == 'correcto' else 'fallido'
+    safety.actualizar_estado_plan(ruta_plan, plan_aplicado)
+    runlog.registrar_ejecucion(
+        'trim', ['aplicar'], inicio, codigo, 0, estado, espacio_trabajo=str(base), id_plan=id_ejec
+    )
     return {
         'herramienta': 'trim',
         'accion': 'aplicar',
@@ -250,6 +255,7 @@ def aplicar_trim(raiz: Path, incluir_venv: bool = False, edad_dias: int = 7) -> 
         'total_bytes': sum(item['tamano'] for item in movidos),
         'movidos': movidos,
         'fallidos': fallidos,
+        'plan_persistente': str(ruta_plan),
         'fecha': datetime.now(UTC).isoformat(),
         'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
     }

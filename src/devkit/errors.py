@@ -7,6 +7,10 @@ class ErrorConfiguracion(ErrorBase):
     pass
 
 
+class ErrorIntegridad(ErrorBase):
+    pass
+
+
 class ErrorFormato(ErrorBase):
     pass
 

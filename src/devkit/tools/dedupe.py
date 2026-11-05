@@ -194,12 +194,17 @@ def construir_plan(grupos: list[dict], tope: int = TOPE_BYTES) -> dict:
                 omitidos += 1
                 continue
             total += grupo['tamano']
+            try:
+                modificado = Path(ruta).stat().st_mtime
+            except OSError:
+                modificado = 0
             acciones.append(
                 {
                     'tipo': 'papelera',
                     'origen': ruta,
                     'conservar': grupo['conservar'],
                     'tamano': grupo['tamano'],
+                    'mtime': modificado,
                     'extension': ext,
                 }
             )
@@ -229,13 +234,17 @@ def escanear_dedupe(
     ignorar_onedrive: bool = True,
     tope: int = TOPE_BYTES,
 ) -> dict:
-    # Construye el plan sin tocar el disco y lo registra en el journal.
+    # Construye el plan sin tocar el disco y guarda su manifiesto persistente.
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
     archivos = recolectar_archivos(base, ignorar_onedrive, edad_dias)
     grupos = construir_grupos(archivos)
     plan = construir_plan(grupos, tope)
-    runlog.registrar_ejecucion('dedupe', ['escanear'], inicio, 0, 0, 'escanear')
+    id_ejec = runlog.iniciar_ejecucion('dedupe', 'escanear', espacio_trabajo=str(base))
+    ruta_plan = safety.guardar_plan(id_ejec, 'dedupe', plan['acciones'])
+    runlog.registrar_ejecucion(
+        'dedupe', ['escanear'], inicio, 0, 0, 'escanear', espacio_trabajo=str(base), id_plan=id_ejec
+    )
     return {
         'herramienta': 'dedupe',
         'accion': 'escanear',
@@ -250,6 +259,7 @@ def escanear_dedupe(
         'resumen_extension': plan['resumen_extension'],
         'grupos': grupos,
         'acciones': plan['acciones'],
+        'plan_persistente': str(ruta_plan),
         'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
     }
 
@@ -260,13 +270,35 @@ def aplicar_dedupe(
     ignorar_onedrive: bool = True,
     tope: int = TOPE_BYTES,
 ) -> dict:
-    # Ejecuta el plan moviendo cada duplicado a la papelera de Windows.
+    # Ejecuta el plan validando el manifiesto persistente antes de tocar la papelera.
     safety.verificar_escritura('mover duplicados')
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
     archivos = recolectar_archivos(base, ignorar_onedrive, edad_dias)
     grupos = construir_grupos(archivos)
     plan = construir_plan(grupos, tope)
+    id_ejec = runlog.iniciar_ejecucion('dedupe', 'aplicar', espacio_trabajo=str(base))
+    ruta_plan = safety.guardar_plan(id_ejec, 'dedupe', plan['acciones'])
+    validacion = safety._validar_arbol({'acciones': plan['acciones']})
+    if validacion:
+        safety.actualizar_estado_plan(ruta_plan, 'fallido')
+        runlog.registrar_ejecucion(
+            'dedupe', ['aplicar'], inicio, 2, 0, 'error', espacio_trabajo=str(base), id_plan=id_ejec
+        )
+        return {
+            'herramienta': 'dedupe',
+            'accion': 'aplicar',
+            'estado': 'error',
+            'codigo': 2,
+            'raiz': str(base),
+            'total_movidos': 0,
+            'total_bytes': 0,
+            'movidos': [],
+            'fallidos': validacion,
+            'plan_persistente': str(ruta_plan),
+            'fecha': datetime.now(UTC).isoformat(),
+            'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
+        }
     movidos = []
     fallidos = []
     for accion in plan['acciones']:
@@ -282,7 +314,11 @@ def aplicar_dedupe(
             fallidos.append({'ruta': accion['origen'], 'detalle': str(fallo)})
     estado = 'correcto' if not fallidos else 'error'
     codigo = 0 if estado == 'correcto' else 2
-    runlog.registrar_ejecucion('dedupe', ['aplicar'], inicio, codigo, 0, estado)
+    plan_aplicado = 'aplicado' if estado == 'correcto' else 'fallido'
+    safety.actualizar_estado_plan(ruta_plan, plan_aplicado)
+    runlog.registrar_ejecucion(
+        'dedupe', ['aplicar'], inicio, codigo, 0, estado, espacio_trabajo=str(base), id_plan=id_ejec
+    )
     return {
         'herramienta': 'dedupe',
         'accion': 'aplicar',
@@ -293,6 +329,7 @@ def aplicar_dedupe(
         'total_bytes': sum(item['tamano'] for item in movidos),
         'movidos': movidos,
         'fallidos': fallidos,
+        'plan_persistente': str(ruta_plan),
         'fecha': datetime.now(UTC).isoformat(),
         'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
     }

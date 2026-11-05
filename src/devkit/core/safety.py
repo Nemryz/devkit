@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from devkit.errors import ErrorSoloLectura
+from devkit.errors import ErrorIntegridad, ErrorSoloLectura
 
 VALORES_ACTIVOS = {'1', 'true', 'si', 'yes', 'on'}
 
@@ -29,8 +29,8 @@ def verificar_escritura(accion: str) -> None:
 
 
 def firmar_plan(acciones: list[dict]) -> str:
-    # Firma estable del plan a partir de origen y destino.
-    texto = '\n'.join(f'{a.get("origen", "")} -> {a.get("destino", "")}' for a in acciones)
+    # Firma de integridad accidental, no de autenticidad, sobre todo el contenido de las acciones.
+    texto = json.dumps(acciones, ensure_ascii=False, sort_keys=True, default=str)
     return hashlib.sha256(texto.encode('utf-8')).hexdigest()
 
 
@@ -50,6 +50,7 @@ def guardar_plan(
         'id_ejecucion': id_ejecucion,
         'herramienta': herramienta,
         'fecha': datetime.now(UTC).isoformat(),
+        'estado': 'pendiente',
         'firma': firma,
         'total': len(acciones),
         'acciones': acciones,
@@ -61,23 +62,47 @@ def guardar_plan(
 
 def cargar_plan(ruta: Path) -> dict:
     # Carga un plan persistido y valida su firma antes de aplicarlo.
-    datos = json.loads(ruta.read_text(encoding='utf-8'))
+    try:
+        datos = json.loads(ruta.read_text(encoding='utf-8'))
+    except OSError as fallo:
+        raise ErrorIntegridad(f'no se pudo leer el plan {ruta} porque {fallo}') from fallo
+    except json.JSONDecodeError as fallo:
+        raise ErrorIntegridad(f'el plan {ruta} no es JSON valido porque {fallo}') from fallo
     if firmar_plan(datos.get('acciones', [])) != datos.get('firma'):
-        raise ErrorSoloLectura(f'el plan {ruta} fue modificado, firma no coincide')
+        raise ErrorIntegridad(f'el plan {ruta} fue modificado, firma no coincide')
     return datos
 
 
+def actualizar_estado_plan(ruta_plan: Path, estado: str) -> None:
+    # Marca el manifiesto sin tocar la firma, que cubre solo las acciones.
+    datos = json.loads(ruta_plan.read_text(encoding='utf-8'))
+    datos['estado'] = estado
+    ruta_plan.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding='utf-8')
+
+
 def _validar_arbol(plan: dict) -> list[dict]:
-    # Comprueba que cada archivo/carpeta del plan sigue existiendo con mismo tamano.
+    # Comprueba que cada elemento del plan sigue igual que al construirlo.
     fallos = []
     for accion in plan.get('acciones', []):
         ruta = Path(accion.get('origen', ''))
         if not ruta.exists():
             fallos.append({'ruta': str(ruta), 'detalle': 'ya no existe'})
             continue
-        size_plan = accion.get('tamano')
-        if size_plan is not None and ruta.is_file() and ruta.stat().st_size != size_plan:
-            fallos.append({'ruta': str(ruta), 'detalle': 'cambio entre plan y aplicar'})
+        if ruta.is_file():
+            tamano_plan = accion.get('tamano')
+            if tamano_plan is not None and ruta.stat().st_size != tamano_plan:
+                detalle = 'cambio de tamano entre plan y aplicar'
+                fallos.append({'ruta': str(ruta), 'detalle': detalle})
+                continue
+            mtime_plan = accion.get('mtime')
+            if mtime_plan is not None and ruta.stat().st_mtime != mtime_plan:
+                detalle = 'cambio de contenido entre plan y aplicar'
+                fallos.append({'ruta': str(ruta), 'detalle': detalle})
+                continue
+        destino = accion.get('destino')
+        if destino and Path(str(destino)).exists():
+            detalle = f'el destino ya existe {destino}'
+            fallos.append({'ruta': str(ruta), 'detalle': detalle})
     return fallos
 
 
@@ -114,6 +139,11 @@ def ejecutar_plan(plan, accion_desc: str = 'ejecutar plan') -> dict:
                 if destino is None:
                     fallos.append({'origen': accion.origen, 'detalle': 'mover sin destino'})
                     continue
+                # Se mira el destino justo antes de mover para no pisar nada creado mientras tanto.
+                if destino.exists():
+                    detalle = f'el destino ya existe, no se sobrescribe {destino}'
+                    fallos.append({'origen': accion.origen, 'detalle': detalle})
+                    continue
                 destino.parent.mkdir(parents=True, exist_ok=True)
                 Path(accion.origen).replace(destino)
             elif accion.tipo == 'crear_carpeta':
@@ -131,8 +161,9 @@ def aplicar_plan_persistente(ruta_plan: Path) -> dict:
     plan = cargar_plan(ruta_plan)
     verificar_escritura('aplicar plan persistente')
     fallos = _validar_arbol(plan)
+    ident = plan.get('id_ejecucion')
     if fallos:
-        ident = plan.get('id_ejecucion')
+        actualizar_estado_plan(ruta_plan, 'fallido')
         return {'movidos': [], 'fallos': fallos, 'total': 0, 'id_ejecucion': ident}
     envoltorio = Plan()
     for accion in plan.get('acciones', []):
@@ -142,7 +173,9 @@ def aplicar_plan_persistente(ruta_plan: Path) -> dict:
         destino = accion.get('destino')
         envoltorio.agregar(Accion(tipo=tipo, origen=origen, destino=destino))
     resultado = ejecutar_plan(envoltorio)
-    resultado['id_ejecucion'] = plan.get('id_ejecucion')
+    plan_aplicado = 'aplicado' if not resultado['fallos'] else 'fallido'
+    actualizar_estado_plan(ruta_plan, plan_aplicado)
+    resultado['id_ejecucion'] = ident
     return resultado
 
 

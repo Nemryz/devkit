@@ -7,6 +7,7 @@ from pathlib import Path
 import typer
 
 from devkit import __version__
+from devkit.core import capabilities as modulo_capacidades
 from devkit.core.output import emitir
 from devkit.errors import ErrorBase
 from devkit.tools import backup as modulo_respaldo
@@ -102,6 +103,54 @@ def principal(
 ) -> None:
     # El callback global solo declara las opciones comunes a todos los comandos.
     return None
+
+
+@app.command('capabilities')
+def comando_capabilities(
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida, json o tabla.'),
+) -> None:
+    # Lista las capacidades de las herramientas para que agentes las descubran.
+    resultado = {
+        'herramienta': 'devkit',
+        'accion': 'capabilities',
+        'estado': 'correcto',
+        'codigo': 0,
+        'version_contrato': modulo_capacidades.VERSION_CONTRATO,
+        'total': len(modulo_capacidades.listar_capacidades()),
+        'capacidades': modulo_capacidades.listar_capacidades(),
+    }
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
+
+
+@app.command('describe')
+def comando_describe(
+    herramienta: str = typer.Argument(..., help='Nombre de la herramienta a describir.'),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida, json o tabla.'),
+) -> None:
+    # Describe una herramienta concreta con su contrato completo.
+    capacidad = modulo_capacidades.obtener_capacidad(herramienta)
+    if capacidad is None:
+        emitir(
+            {
+                'herramienta': 'devkit',
+                'accion': 'describe',
+                'estado': 'error',
+                'codigo': 2,
+                'detalle': f'no existe la herramienta {herramienta}',
+            },
+            formato=formato,
+        )
+        raise typer.Exit(code=2)
+    resultado = {
+        'herramienta': 'devkit',
+        'accion': 'describe',
+        'estado': 'correcto',
+        'codigo': 0,
+        'capacidad': capacidad,
+    }
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
 
 
 @app.command('doctor')
@@ -400,7 +449,7 @@ def comando_organize_aplicar(
         None, '--destino', '-d', help='Carpeta Organizados.'
     ),
     todos: bool = typer.Option(
-        False, '--todos', '-t', help='Mueve todos sin confirmar uno a uno.'
+        False, '--todos', '-t', '--si', '-s', help='Mueve todos sin confirmar uno a uno.'
     ),
     por_archivo: bool = typer.Option(
         False,

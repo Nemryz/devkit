@@ -46,6 +46,8 @@ select = ['E', 'F', 'I', 'N', 'W', 'UP', 'B', 'SIM']
 
 [tool.ruff.lint.per-file-ignores]
 'src/devkit/errors.py' = ['N818']
+# El registro de capacidades contiene literales largos de datos.
+'src/devkit/core/capabilities.py' = ['E501']
 # Typer exige Option en los valores por defecto de la firma.
 'src/devkit/cli.py' = ['B008']
 

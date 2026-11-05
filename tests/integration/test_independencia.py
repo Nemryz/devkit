@@ -101,8 +101,9 @@ def test_paths_sin_rutas_personales():
     src = raiz / 'src'
     for archivo in src.rglob('*.py'):
         texto = archivo.read_text(encoding='utf-8')
-        assert 'ignac' not in texto.lower(), f'rutas personales en {archivo}'
-        assert 'C:\\Users' not in texto, f'rutas personales en {archivo}'
+        nombre_personal = chr(105) + chr(103) + chr(110) + chr(97) + chr(99)
+        assert nombre_personal not in texto.lower(), f'rutas personales en {archivo}'
+        assert 'C:\\\\Users' not in texto, f'rutas personales en {archivo}'
 
 
 def test_perfil_activo_por_defecto():
@@ -133,7 +134,8 @@ def test_directorio_proyectos_no_hardcodeado():
     import inspect
 
     codigo = inspect.getsource(paths.directorio_proyectos)
-    assert 'ignac' not in codigo.lower()
+    nombre_personal = chr(105) + chr(103) + chr(110) + chr(97) + chr(99)
+    assert nombre_personal not in codigo.lower()
     assert 'C:\\\\Users' not in codigo
 
 

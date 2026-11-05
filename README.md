@@ -9,14 +9,14 @@ El comando `dev` se instala una sola vez y queda disponible desde cualquier carp
 ### PowerShell
 
 ```powershell
-uv tool install --editable C:\Users\ignac\Projects\devkit
+uv tool install --editable .
 dev --version
 ```
 
 ### CMD
 
 ```cmd
-uv tool install --editable C:\Users\ignac\Projects\devkit
+uv tool install --editable .
 dev --version
 ```
 
@@ -59,7 +59,7 @@ Para desarrollo (editable):
 ### Reinstalar o actualizar
 
 ```powershell
-cd C:\Users\ignac\Projects\devkit
+cd %USERPROFILE%\Projects\devkit
 uv tool install --editable . --force
 ```
 

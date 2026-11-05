@@ -153,6 +153,43 @@ def comando_describe(
     raise typer.Exit(code=resultado['codigo'])
 
 
+@app.command('schema')
+def comando_schema(
+    herramienta: str = typer.Argument(..., help='Nombre de la herramienta.'),
+    accion: str = typer.Argument(..., help='Accion (escanear, aplicar, plan, etc.).'),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Devuelve el esquema de entrada y salida de una accion concreta.
+    capacidad = modulo_capacidades.obtener_capacidad(herramienta)
+    if capacidad is None:
+        emitir(
+            {'herramienta': 'devkit', 'accion': 'schema', 'estado': 'error', 'codigo': 2,
+             'detalle': f'no existe la herramienta {herramienta}'},
+            formato=formato,
+        )
+        raise typer.Exit(code=2)
+    entradas = capacidad.get('inputs', {})
+    salidas = capacidad.get('outputs', {})
+    if accion not in entradas and accion not in salidas:
+        emitir(
+            {'herramienta': 'devkit', 'accion': 'schema', 'estado': 'error', 'codigo': 2,
+             'detalle': f'no existe la accion {accion} en {herramienta}'},
+            formato=formato,
+        )
+        raise typer.Exit(code=2)
+    resultado = {
+        'herramienta': 'devkit',
+        'accion': 'schema',
+        'estado': 'correcto',
+        'codigo': 0,
+        'version_esquema': 1,
+        'herramienta_objetivo': herramienta,
+        'accion_objetivo': accion,
+        'entrada': entradas.get(accion, {}),
+        'salida': salidas,
+    }
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
 @app.command('doctor')
 def comando_doctor(
     formato: str = typer.Option(
@@ -343,6 +380,9 @@ def comando_trim_aplicar(
     forzar: bool = typer.Option(
         False, '--forzar', help='Aplica el plan moviendo a la papelera de Windows.'
     ),
+    dry_run: bool = typer.Option(
+        False, '--dry-run', help='Simula la aplicacion sin tocar el disco.'
+    ),
     plan: Path | None = typer.Option(
         None,
         '--plan',
@@ -355,7 +395,7 @@ def comando_trim_aplicar(
         typer.echo('sin --forzar no se aplica el plan, usa trim escanear', err=True)
         raise typer.Exit(code=2)
     try:
-        resultado = modulo_trim.aplicar_trim(raiz, incluir_venv, edad_dias, plan)
+        resultado = modulo_trim.aplicar_trim(raiz, incluir_venv, edad_dias, plan, dry_run=dry_run)
     except ErrorBase as fallo:
         salir_con_error('trim aplicar', fallo, formato)
         return
@@ -397,6 +437,9 @@ def comando_dedupe_aplicar(
     forzar: bool = typer.Option(
         False, '--forzar', help='Aplica el plan moviendo a la papelera de Windows.'
     ),
+    dry_run: bool = typer.Option(
+        False, '--dry-run', help='Simula la aplicacion sin tocar el disco.'
+    ),
     plan: Path | None = typer.Option(
         None,
         '--plan',
@@ -410,7 +453,9 @@ def comando_dedupe_aplicar(
         raise typer.Exit(code=2)
     try:
         ignorar = not no_ignorar_onedrive
-        resultado = modulo_dedupe.aplicar_dedupe(raiz, edad_dias, ignorar, plan=plan)
+        resultado = modulo_dedupe.aplicar_dedupe(
+            raiz, edad_dias, ignorar, plan=plan, dry_run=dry_run
+        )
     except ErrorBase as fallo:
         salir_con_error('dedupe aplicar', fallo, formato)
         return
@@ -466,6 +511,9 @@ def comando_organize_aplicar(
         '--plan',
         help='Aplica el manifiesto guardado por organize plan sin reescanear.',
     ),
+    dry_run: bool = typer.Option(
+        False, '--dry-run', help='Simula la aplicacion sin tocar el disco.'
+    ),
     formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
 ) -> None:
     # Solo mueve cuando el usuario acepta con --todos o confirma archivo por archivo.
@@ -475,7 +523,7 @@ def comando_organize_aplicar(
     try:
         ignorar = not no_ignorar_onedrive
         resultado = modulo_organize.aplicar_organize(
-            raiz, destino, 0, ignorar, todos, por_archivo, plan
+            raiz, destino, 0, ignorar, todos, por_archivo, plan, dry_run=dry_run
         )
     except ErrorBase as fallo:
         salir_con_error('organize aplicar', fallo, formato)

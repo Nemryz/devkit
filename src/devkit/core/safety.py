@@ -278,27 +278,53 @@ def _ejecutar_accion(accion: dict) -> None:
 
 
 def aplicar_manifiesto(
-    ruta_plan: Path,
-    herramienta: str,
+    ruta_plan: Path | None = None,
+    herramienta: str = '',
     espacio_trabajo: str = '',
     autorizar=None,
+    dry_run: bool = False,
+    acciones: list[dict] | None = None,
 ) -> dict:
     # Ejecutor unico de manifiestos persistentes de toda la suite de herramientas.
-    verificar_escritura(f'aplicar {herramienta}')
-    plan = cargar_plan(ruta_plan)
-    acciones = [dict(accion) for accion in plan.get('acciones', [])]
+    if not dry_run:
+        verificar_escritura(f'aplicar {herramienta}')
+    plan = cargar_plan(ruta_plan) if ruta_plan is not None else None
+    if acciones is None:
+        if plan is None:
+            raise ErrorIntegridad('se requiere un plan o una lista de acciones')
+        acciones = [dict(accion) for accion in plan.get('acciones', [])]
+    else:
+        plan = {
+            'acciones': acciones,
+            'herramienta': herramienta,
+            'workspace_id': '',
+            'workspace_root': '',
+        }
+    acciones = [dict(a) for a in acciones]
     # Valida el contrato del manifiesto antes de tocar el disco.
     plan_herramienta = str(plan.get('herramienta', ''))
-    if plan_herramienta and plan_herramienta != herramienta:
+    if ruta_plan is not None and plan_herramienta and plan_herramienta != herramienta:
         raise ErrorIntegridad(
             f'el manifiesto pertenece a {plan_herramienta}, no a {herramienta}'
         )
     base = Path(espacio_trabajo).expanduser().resolve() if espacio_trabajo else Path.cwd().resolve()
     if not base.is_dir():
         raise ErrorIntegridad(f'la raiz de trabajo no existe {base}')
-    workspace_activo = modulo_workspace.workspace_id(base)
+    if not dry_run:
+        workspace_activo = modulo_workspace.workspace_id(base)
+    else:
+        # En simulacion no se crea .devkit; se lee el id si ya existe.
+        archivo_workspace = base / '.devkit' / 'workspace'
+        if archivo_workspace.is_file():
+            try:
+                datos_ws = __import__('json').loads(archivo_workspace.read_text(encoding='utf-8'))
+                workspace_activo = str(datos_ws.get('workspace_id', ''))
+            except (OSError, ValueError):
+                workspace_activo = ''
+        else:
+            workspace_activo = ''
     workspace_manifesto = str(plan.get('workspace_id', ''))
-    if workspace_manifesto and workspace_manifesto != workspace_activo:
+    if (not dry_run) and workspace_manifesto and workspace_manifesto != workspace_activo:
         raise ErrorIntegridad(
             f'el manifiesto pertenece al workspace {workspace_manifesto}, '
             f'no a {workspace_activo}'
@@ -310,7 +336,35 @@ def aplicar_manifiesto(
                 raise ErrorIntegridad(
                     f'la accion contiene una ruta fuera del workspace: {valor}'
                 )
-    id_plan = ruta_plan.stem
+    id_plan = ruta_plan.stem if ruta_plan is not None else 'simulado'
+    if dry_run:
+        # Simulacion: valida cada accion sin ejecutarla ni registrar en el journal.
+        movidos = []
+        fallidos = []
+        omitidos = []
+        for accion in acciones:
+            origen = str(accion.get('origen', ''))
+            destino = str(accion.get('destino', ''))
+            if autorizar is not None and not autorizar(accion):
+                omitidos.append(accion)
+                continue
+            detalle = _validar_accion(accion)
+            if detalle:
+                fallidos.append({'origen': origen, 'detalle': detalle})
+            else:
+                movidos.append(accion)
+        estado_plan = 'simulado'
+        return {
+            'id_ejecucion': '',
+            'id_plan': id_plan,
+            'estado_plan': estado_plan,
+            'movidos': movidos,
+            'fallidos': fallidos,
+            'omitidos': omitidos,
+            'total': len(acciones),
+            'codigo': 0 if not fallidos else 2,
+            'dry_run': True,
+        }
     id_ejec = runlog.iniciar_ejecucion(
         herramienta, 'aplicar', espacio_trabajo=espacio_trabajo, id_plan=id_plan
     )

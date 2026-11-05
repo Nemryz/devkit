@@ -288,16 +288,17 @@ def aplicar_organize(
     todos: bool = False,
     por_archivo: bool = False,
     plan_persistente: Path | None = None,
+    dry_run: bool = False,
 ) -> dict:
-    # Aplica un manifiesto por el ejecutor unico, sin reescanear si ya existe.
-    safety.verificar_escritura('organizar archivos')
+    # Aplica (o simula) un manifiesto por el ejecutor unico, sin reescanear si ya existe.
+    if not dry_run:
+        safety.verificar_escritura('organizar archivos')
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
     carpeta_destino = Path(destino).expanduser().resolve() if destino else base / 'Organizados'
     if str(carpeta_destino) == str(base):
         carpeta_destino = base / 'Organizados'
-    if por_archivo and not todos:
-        # Sin --todos y sin reloj interactivo, aborta para obligar a elegir el modo.
+    if por_archivo and not todos and not dry_run:
         import sys
 
         if not sys.stdin.isatty():
@@ -305,16 +306,27 @@ def aplicar_organize(
     ruta_plan = Path(plan_persistente).expanduser().resolve() if plan_persistente else None
     if ruta_plan is not None and not ruta_plan.is_file():
         raise ErrorOrganizar(f'no existe el plan {ruta_plan}')
-    if ruta_plan is None:
+    acciones = None
+    if ruta_plan is None and dry_run:
+        archivos = recolectar_archivos(base, ignorar_onedrive, edad_dias)
+        archivos = [ruta for ruta in archivos if carpeta_destino not in ruta.resolve().parents]
+        plan_local = construir_plan(base, carpeta_destino, archivos)
+        acciones = plan_local['manifest']
+    if ruta_plan is None and not dry_run:
         escaneo = escanear_organize(base, destino, edad_dias, ignorar_onedrive)
         ruta_plan = Path(escaneo['plan_persistente'])
-    autorizar = None if todos else _autorizar_por_archivo(False)
+    autorizar = None if (todos or dry_run) else _autorizar_por_archivo(False)
     resultado = safety.aplicar_manifiesto(
-        ruta_plan, 'organize', espacio_trabajo=str(base), autorizar=autorizar
+        ruta_plan,
+        'organize',
+        espacio_trabajo=str(base),
+        autorizar=autorizar,
+        dry_run=dry_run,
+        acciones=acciones,
     )
     movidos = resultado['movidos']
     fallidos = resultado['fallidos']
-    estado = 'correcto' if not fallidos else 'error'
+    estado = 'simulado' if dry_run else ('correcto' if not fallidos else 'error')
     return {
         'herramienta': 'organize',
         'accion': 'aplicar',
@@ -328,7 +340,8 @@ def aplicar_organize(
         'fallidos': fallidos,
         'estado_plan': resultado['estado_plan'],
         'id_ejecucion': resultado['id_ejecucion'],
-        'plan_persistente': str(ruta_plan),
+        'plan_persistente': str(ruta_plan) if ruta_plan is not None else '',
         'fecha': datetime.now(UTC).isoformat(),
         'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
+        'dry_run': dry_run,
     }

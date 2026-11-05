@@ -203,19 +203,30 @@ def aplicar_trim(
     incluir_venv: bool = False,
     edad_dias: int = 7,
     plan: Path | None = None,
+    dry_run: bool = False,
 ) -> dict:
     # Aplica un manifiesto por el ejecutor unico, sin reescanear si ya existe.
-    safety.verificar_escritura('limpiar caches')
+    if not dry_run:
+        safety.verificar_escritura('limpiar caches')
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
     ruta_plan = Path(plan).expanduser().resolve() if plan is not None else None
     if ruta_plan is not None and not ruta_plan.is_file():
         raise ErrorLimpieza(f'no existe el plan {ruta_plan}')
+    acciones = None
     if ruta_plan is None:
-        escaneo = escanear_trim(base, incluir_venv, edad_dias)
-        ruta_plan = Path(escaneo['plan_persistente'])
-    resultado = safety.aplicar_manifiesto(ruta_plan, 'trim', espacio_trabajo=str(base))
-    estado = 'correcto' if not resultado['fallidos'] else 'error'
+        if dry_run:
+            candidatos = escanear(base, incluir_venv, edad_dias)
+            plan_obj = construir_plan(candidatos)
+            acciones = plan_obj['manifest']
+        else:
+            escaneo = escanear_trim(base, incluir_venv, edad_dias)
+            ruta_plan = Path(escaneo['plan_persistente'])
+            acciones = None
+    resultado = safety.aplicar_manifiesto(
+        ruta_plan, 'trim', espacio_trabajo=str(base), dry_run=dry_run, acciones=acciones
+    )
+    estado = 'simulado' if dry_run else ('correcto' if not resultado['fallidos'] else 'error')
     movidos = resultado['movidos']
     return {
         'herramienta': 'trim',
@@ -229,7 +240,8 @@ def aplicar_trim(
         'fallidos': resultado['fallidos'],
         'estado_plan': resultado['estado_plan'],
         'id_ejecucion': resultado['id_ejecucion'],
-        'plan_persistente': str(ruta_plan),
+        'plan_persistente': str(ruta_plan) if ruta_plan is not None else '',
         'fecha': datetime.now(UTC).isoformat(),
         'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
+        'dry_run': dry_run,
     }

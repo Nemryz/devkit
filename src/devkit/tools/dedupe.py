@@ -270,20 +270,30 @@ def aplicar_dedupe(
     ignorar_onedrive: bool = True,
     tope: int = TOPE_BYTES,
     plan: Path | None = None,
+    dry_run: bool = False,
 ) -> dict:
-    # Aplica un manifiesto por el ejecutor unico, sin reescanear si ya existe.
-    safety.verificar_escritura('mover duplicados')
+    # Aplica (o simula) un manifiesto por el ejecutor unico, sin reescanear si ya existe.
+    if not dry_run:
+        safety.verificar_escritura('mover duplicados')
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
     ruta_plan = Path(plan).expanduser().resolve() if plan is not None else None
     if ruta_plan is not None and not ruta_plan.is_file():
         raise ErrorDuplicados(f'no existe el plan {ruta_plan}')
-    if ruta_plan is None:
+    acciones = None
+    if ruta_plan is None and dry_run:
+        archivos = recolectar_archivos(base, ignorar_onedrive, edad_dias)
+        grupos = construir_grupos(archivos)
+        plan_obj = construir_plan(grupos, tope)
+        acciones = plan_obj['acciones']
+    if ruta_plan is None and not dry_run:
         escaneo = escanear_dedupe(base, edad_dias, ignorar_onedrive, tope)
         ruta_plan = Path(escaneo['plan_persistente'])
-    resultado = safety.aplicar_manifiesto(ruta_plan, 'dedupe', espacio_trabajo=str(base))
+    resultado = safety.aplicar_manifiesto(
+        ruta_plan, 'dedupe', espacio_trabajo=str(base), dry_run=dry_run, acciones=acciones
+    )
     movidos = resultado['movidos']
-    estado = 'correcto' if not resultado['fallidos'] else 'error'
+    estado = 'simulado' if dry_run else ('correcto' if not resultado['fallidos'] else 'error')
     return {
         'herramienta': 'dedupe',
         'accion': 'aplicar',
@@ -296,7 +306,8 @@ def aplicar_dedupe(
         'fallidos': resultado['fallidos'],
         'estado_plan': resultado['estado_plan'],
         'id_ejecucion': resultado['id_ejecucion'],
-        'plan_persistente': str(ruta_plan),
+        'plan_persistente': str(ruta_plan) if ruta_plan is not None else '',
         'fecha': datetime.now(UTC).isoformat(),
         'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
+        'dry_run': dry_run,
     }

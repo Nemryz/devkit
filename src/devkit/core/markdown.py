@@ -57,6 +57,8 @@ def validar_metadatos(datos: dict[str, Any]) -> list[str]:
         errores.append('etiquetas debe ser una lista')
     if 'estado' in datos and datos['estado'] not in {'borrador', 'activo', 'archivado'}:
         errores.append('estado solo admite borrador, activo o archivado')
+    if 'origen' in datos and datos['origen'] not in {'manual', 'ocr', 'scrape', 'importado'}:
+        errores.append('origen solo admite manual, ocr, scrape o importado')
     return errores
 
 
@@ -120,13 +122,20 @@ def frontmatter_a_texto(datos: dict[str, Any]) -> str:
     return '\n'.join(lineas)
 
 
-def construir_nota(titulo: str, cuerpo: str, etiquetas: list[str], estado: str) -> str:
+def construir_nota(
+    titulo: str,
+    cuerpo: str,
+    etiquetas: list[str],
+    estado: str,
+    origen: str = 'manual',
+) -> str:
     # Arma la nota completa con frontmatter y cuerpo.
     datos = {
         'titulo': titulo,
         'creado': datetime.now().strftime('%Y-%m-%d'),
         'etiquetas': etiquetas,
         'estado': estado,
+        'origen': origen,
     }
     bloque = frontmatter_a_texto(datos)
     return f'{bloque}\n\n{cuerpo.strip()}\n'

@@ -4,7 +4,7 @@ Herramientas internas de mantenimiento para Windows, escritas en Python y pensad
 
 ## Estado actual
 
-La fase cero entrega el esqueleto del paquete, el registro de ejecuciones, el modo de solo lectura y el comando doctor. Las herramientas de backup, limpieza, deduplicacion, salud, organizacion, ideas e indice estan implementadas. OCR llega en la fase seis.
+La fase cero entrega el esqueleto del paquete, el registro de ejecuciones, el modo de solo lectura y el comando doctor. Las herramientas de backup, limpieza, deduplicacion, salud, organizacion, ideas, indice y OCR estan implementadas. OCR es solo lectura y extrae texto con Tesseract.
 
 ## Instalacion
 

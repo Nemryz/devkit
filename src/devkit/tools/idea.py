@@ -25,6 +25,7 @@ def crear_nota(
     cuerpo: str,
     etiquetas: list[str] | None = None,
     estado: str = 'borrador',
+    origen: str = 'manual',
 ) -> dict:
     # Crea una nota con frontmatter validado y nombre estable.
     safety.verificar_escritura('crear nota')
@@ -44,7 +45,7 @@ def crear_nota(
             duplicado = True
             break
     ruta = modulo_markdown.generar_nombre(titulo, base)
-    contenido = modulo_markdown.construir_nota(titulo, cuerpo, etiquetas, estado)
+    contenido = modulo_markdown.construir_nota(titulo, cuerpo, etiquetas, estado, origen)
     ruta.write_text(contenido, encoding='utf-8')
     resultado = {
         'herramienta': 'idea',

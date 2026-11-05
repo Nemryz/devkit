@@ -38,4 +38,4 @@ Construye un indice SQLite con FTS5 sobre las notas. Permite buscar, actualizar 
 
 ## ocr
 
-Pendiente. Extraera texto y metricas de confianza en modo de solo lectura.
+Extrae texto y metricas de confianza en modo de solo lectura con Tesseract y PyMuPDF. Soporta imagenes y PDFs. Genera notas con origen ocr listas para idea e index. No mueve, borra ni clasifica archivos.

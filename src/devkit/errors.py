@@ -49,3 +49,7 @@ class ErrorIdea(ErrorBase):
 
 class ErrorIndex(ErrorBase):
     pass
+
+
+class ErrorOCR(ErrorBase):
+    pass

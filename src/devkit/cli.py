@@ -14,6 +14,7 @@ from devkit.tools import dedupe as modulo_dedupe
 from devkit.tools import idea as modulo_idea
 from devkit.tools import index as modulo_index
 from devkit.tools import nice as modulo_nice
+from devkit.tools import ocr as modulo_ocr
 from devkit.tools import organize as modulo_organize
 from devkit.tools import trim as modulo_trim
 from devkit.tools.doctor import ejecutar_doctor
@@ -59,6 +60,11 @@ app_index = typer.Typer(
     help='Indice SQLite con FTS5 sobre las notas Markdown.',
 )
 app.add_typer(app_index, name='index')
+app_ocr = typer.Typer(
+    no_args_is_help=True,
+    help='OCR en solo lectura con Tesseract y PyMuPDF.',
+)
+app.add_typer(app_ocr, name='ocr')
 
 
 def mostrar_version(valor: bool) -> None:
@@ -526,6 +532,47 @@ def comando_index_exportar(
         resultado = modulo_index.exportar_indice(bd, salida)
     except ErrorBase as fallo:
         salir_con_error('index exportar', fallo, formato)
+        return
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
+
+
+@app_ocr.command('escanear')
+def comando_ocr_escanear(
+    raiz: Path = typer.Argument(..., help='Carpeta con PDFs e imagenes.'),
+    idioma: str = typer.Option('spa', '--idioma', help='Idioma Tesseract.'),
+    no_ignorar_onedrive: bool = typer.Option(
+        False,
+        '--no-ignorar-onedrive',
+        help='Permite entrar en rutas de OneDrive.',
+    ),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Extrae texto en solo lectura y devuelve metricas por archivo.
+    try:
+        ignorar = not no_ignorar_onedrive
+        resultado = modulo_ocr.escanear_ocr(raiz, idioma, ignorar)
+    except ErrorBase as fallo:
+        salir_con_error('ocr escanear', fallo, formato)
+        return
+    emitir(resultado, formato=formato)
+    raise typer.Exit(code=resultado['codigo'])
+
+
+@app_ocr.command('exportar')
+def comando_ocr_exportar(
+    raiz: Path = typer.Argument(..., help='Carpeta con PDFs e imagenes.'),
+    destino: Path | None = typer.Option(
+        None, '--destino', '-d', help='Carpeta de salida (defecto raiz/OCR).'
+    ),
+    idioma: str = typer.Option('spa', '--idioma', help='Idioma Tesseract.'),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Genera notas con origen ocr listas para idea e index.
+    try:
+        resultado = modulo_ocr.exportar_ocr(raiz, destino, idioma)
+    except ErrorBase as fallo:
+        salir_con_error('ocr exportar', fallo, formato)
         return
     emitir(resultado, formato=formato)
     raise typer.Exit(code=resultado['codigo'])

@@ -477,6 +477,8 @@ Las rutas del estado se resuelven por capas: variable de entorno, config.toml en
 
 El journal es transaccional y los planes tienen manifiesto firmado para aplicar sin reescanear. La firma SHA-256 cubre tamaño, mtime y contenido de cada acción y se revalida justo antes de ejecutarla, por lo que un cambio de contenido que preserve tamaño y mtime se detecta. Esa firma es integridad accidental, no autenticación: detecta cambios involuntarios en el árbol, no manipulación maliciosa del plan, que podría recalcular el hash. Si la manipulación maliciosa entra en el modelo de amenazas, hará falta HMAC con clave secreta o un mecanismo equivalente. Queda una ventana residual de carrera entre la validación de un archivo y su movimiento (TOCTOU) que se reduce revalidando cada acción en el mismo instante en que se ejecuta. Las comprobaciones de salud usan ok, aviso, error y unknown para no fingir salud cuando no hay datos.
 
+Cada espacio de trabajo tiene un identificador persistente en `.devkit/workspace` que no depende de su ruta física. Los manifiestos declaran `schema_version`, `plan_id`, `workspace_id`, `workspace_root`, `tool` y se validan antes de ejecutar: un manifiesto sin `schema_version` se rechaza con `MANIFEST_SCHEMA_VERSION_MISSING`, uno de otra herramienta o workspace se rechaza, y ninguna acción fuera de la raíz autorizada se ejecuta. Copiar un espacio de trabajo duplica su identificador; mientras no exista un comando de gestión, DevKit reconoce ambas copias como la misma identidad lógica. Las carpetas se validan con un hash recursivo del árbol que detecta archivos añadidos, modificados o enlaces. El guardián centralizado es el único camino de escritura destructiva.
+
 DevKit no depende de dónde reside, solo de los recursos que necesita para ejecutar sus operaciones. Las herramientas no presuponen que el directorio de trabajo es el directorio de instalación. Los datos de un espacio de trabajo no contaminan los de otro. Las operaciones destructivas respetan las políticas de seguridad. Las interrupciones no dejan estados ambiguos sin posibilidad de diagnóstico.
 
 ## Pruebas
@@ -486,7 +488,7 @@ uv run pytest
 uv run ruff check .
 ```
 
-268 pruebas en verde, con 2 pruebas omitidas sin Tesseract instalado (3 en la integración continua sin el binario). Todas usan el sistema de archivos real sobre carpetas temporales, sin mocks del sistema de archivos. Integración continua en Windows con uv sync --locked, ruff y pytest.
+278 pruebas en verde, con 2 pruebas omitidas sin Tesseract instalado (3 en la integración continua sin el binario). Todas usan el sistema de archivos real sobre carpetas temporales, sin mocks del sistema de archivos. Integración continua en Windows con uv sync --locked, ruff y pytest.
 
 Las pruebas de contrato cubren los escenarios que fijan el comportamiento prometido: precedencia de rutas por capas y perfiles de almacenamiento con fail loud, validación del manifiesto entre plan y aplicación con estados pendiente, aplicado y fallido, trazabilidad del journal con espacio de trabajo e id de plan y recuperación de ejecuciones interrumpidas, identidad de espacios de trabajo en el índice con resolución por raíz efectiva, concurrencia de escrituras en SQLite con WAL y transacciones inmediatas, y migración de configuraciones antiguas sin perder datos.
 

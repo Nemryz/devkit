@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from devkit.core import runlog
+from devkit.core import workspace as modulo_workspace
 from devkit.errors import ErrorIntegridad, ErrorSoloLectura
 
 VALORES_ACTIVOS = {'1', 'true', 'si', 'yes', 'on'}
@@ -29,9 +30,28 @@ def verificar_escritura(accion: str) -> None:
 # Planes persistentes con firma, validacion del arbol y estados del manifiesto.
 
 
-def firmar_plan(acciones: list[dict]) -> str:
-    # Firma de integridad accidental, no de autenticidad, sobre todo el contenido de las acciones.
-    texto = json.dumps(acciones, ensure_ascii=False, sort_keys=True, default=str)
+CODIGO_MANIFEST_SCHEMA_VERSION_MISSING = 'MANIFEST_SCHEMA_VERSION_MISSING'
+SCHEMA_VERSION_ACTUAL = 1
+
+
+def firmar_plan(
+    acciones: list[dict],
+    schema_version: int = SCHEMA_VERSION_ACTUAL,
+    plan_id: str = '',
+    workspace_id: str = '',
+    workspace_root: str = '',
+    herramienta: str = '',
+) -> str:
+    # Firma de integridad accidental, no de autenticidad, sobre todo el contenido del manifiesto.
+    payload = {
+        'schema_version': schema_version,
+        'plan_id': plan_id,
+        'workspace_id': workspace_id,
+        'workspace_root': workspace_root,
+        'herramienta': herramienta,
+        'acciones': acciones,
+    }
+    texto = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
     return hashlib.sha256(texto.encode('utf-8')).hexdigest()
 
 
@@ -40,15 +60,28 @@ def guardar_plan(
     herramienta: str,
     acciones: list[dict],
     destino_dir: Path | None = None,
+    workspace_id: str = '',
+    workspace_root: str = '',
 ) -> Path:
     # Guarda el manifiesto del plan para aplicar despues sin reescanear.
     from devkit.core import paths
 
     base = destino_dir or (paths.directorio_planes())
     base.mkdir(parents=True, exist_ok=True)
-    firma = firmar_plan(acciones)
+    firma = firmar_plan(
+        acciones,
+        schema_version=SCHEMA_VERSION_ACTUAL,
+        plan_id=id_ejecucion,
+        workspace_id=workspace_id,
+        workspace_root=workspace_root,
+        herramienta=herramienta,
+    )
     datos = {
+        'schema_version': SCHEMA_VERSION_ACTUAL,
+        'plan_id': id_ejecucion,
         'id_ejecucion': id_ejecucion,
+        'workspace_id': workspace_id,
+        'workspace_root': workspace_root,
         'herramienta': herramienta,
         'fecha': datetime.now(UTC).isoformat(),
         'estado': 'pendiente',
@@ -69,7 +102,27 @@ def cargar_plan(ruta: Path) -> dict:
         raise ErrorIntegridad(f'no se pudo leer el plan {ruta} porque {fallo}') from fallo
     except json.JSONDecodeError as fallo:
         raise ErrorIntegridad(f'el plan {ruta} no es JSON valido porque {fallo}') from fallo
-    if firmar_plan(datos.get('acciones', [])) != datos.get('firma'):
+    schema_version = datos.get('schema_version')
+    if schema_version is None:
+        raise ErrorIntegridad(
+            f'{CODIGO_MANIFEST_SCHEMA_VERSION_MISSING}: el manifiesto no declara schema_version. '
+            f'No se ejecuto ninguna accion. Utiliza un manifiesto compatible o genera uno nuevo.'
+        )
+    if schema_version != SCHEMA_VERSION_ACTUAL:
+        raise ErrorIntegridad(
+            f'el manifiesto declara schema_version {schema_version}, no soportada. '
+            f'No se ejecuto ninguna accion.'
+        )
+    acciones = datos.get('acciones', [])
+    firma_esperada = firmar_plan(
+        acciones,
+        schema_version=schema_version,
+        plan_id=str(datos.get('plan_id') or datos.get('id_ejecucion') or ruta.stem),
+        workspace_id=str(datos.get('workspace_id', '')),
+        workspace_root=str(datos.get('workspace_root', '')),
+        herramienta=str(datos.get('herramienta', '')),
+    )
+    if firma_esperada != datos.get('firma'):
         raise ErrorIntegridad(f'el plan {ruta} fue modificado, firma no coincide')
     return datos
 
@@ -90,14 +143,45 @@ def hash_contenido(ruta: Path) -> str:
     return resumen.hexdigest()
 
 
+def hash_arbol(raiz: Path) -> str:
+    # Calcula un hash del arbol de una carpeta sin seguir enlaces ni junctions.
+    resumen = hashlib.sha256()
+    base = Path(raiz).expanduser().resolve()
+    inventario: list[tuple[str, str, str]] = []
+    for carpeta, subcarpetas, archivos in os.walk(base, followlinks=False):
+        ruta_carpeta = Path(carpeta)
+        # Los enlaces y junctions se registran pero no se recorren.
+        for nombre in list(subcarpetas):
+            candidato = ruta_carpeta / nombre
+            if candidato.is_symlink() or candidato.is_junction():
+                inventario.append(('link', str(candidato.relative_to(base)), ''))
+                subcarpetas.remove(nombre)
+        for nombre in archivos:
+            candidato = ruta_carpeta / nombre
+            if candidato.is_symlink() or candidato.is_junction():
+                inventario.append(('link', str(candidato.relative_to(base)), ''))
+                continue
+            try:
+                huella = hash_contenido(candidato)
+                inventario.append(('file', str(candidato.relative_to(base)), huella))
+            except OSError:
+                inventario.append(('file', str(candidato.relative_to(base)), 'ERROR'))
+    inventario.sort()
+    for tipo, relativo, huella in inventario:
+        resumen.update(f'{tipo}:{relativo}:{huella}\n'.encode())
+    return resumen.hexdigest()
+
+
 def _validar_accion(accion: dict) -> str | None:
     # Comprueba que una accion sigue siendo correcta justo antes de ejecutarla.
     origen = Path(str(accion.get('origen', '')))
     tipo = str(accion.get('tipo', 'papelera'))
     if tipo not in TIPOS_PERMITIDOS:
         return f'tipo no permitido {tipo}'
+    if origen.is_symlink() or origen.is_junction():
+        return 'el origen es un enlace, no se procesa'
     if tipo == 'crear_carpeta':
-        return None if not origen.is_file() else 'el origen es un archivo'
+        return None if not origen.exists() or origen.is_dir() else 'el origen es un archivo'
     if not origen.exists():
         return 'ya no existe'
     if origen.is_file():
@@ -110,6 +194,14 @@ def _validar_accion(accion: dict) -> str | None:
         firma = accion.get('hash')
         if firma and hash_contenido(origen) != firma:
             return 'cambio de contenido entre plan y aplicar'
+    elif origen.is_dir():
+        firma = accion.get('hash')
+        if firma:
+            try:
+                if hash_arbol(origen) != firma:
+                    return 'cambio de contenido entre plan y aplicar'
+            except OSError:
+                return 'no se pudo validar el contenido de la carpeta'
     destino = str(accion.get('destino', ''))
     if tipo == 'mover':
         if not destino:
@@ -144,38 +236,25 @@ def mover_a_papelera_from_safety(ruta) -> None:
 
 
 def ejecutar_plan(plan, accion_desc: str = 'ejecutar plan') -> dict:
-    # Guardian centralizado — unico sitio que toca el disco en escrituras.
+    # Guardian centralizado reutilizando el validador y el ejecutor unicos.
     verificar_escritura(accion_desc)
     movidos = []
     fallos = []
-    for accion in plan.acciones:
-        if accion.tipo not in TIPOS_PERMITIDOS:
-            fallos.append({'origen': accion.origen, 'detalle': f'tipo no permitido {accion.tipo}'})
+    for accion_obj in plan.acciones:
+        accion = {
+            'tipo': accion_obj.tipo,
+            'origen': accion_obj.origen,
+            'destino': accion_obj.destino,
+        }
+        detalle = _validar_accion(accion)
+        if detalle:
+            fallos.append({'origen': accion_obj.origen, 'detalle': detalle})
             continue
         try:
-            if accion.tipo == 'papelera':
-                mover_a_papelera_from_safety(accion.origen)
-            elif accion.tipo == 'mover':
-                from pathlib import Path
-
-                destino = Path(accion.destino) if accion.destino else None
-                if destino is None:
-                    fallos.append({'origen': accion.origen, 'detalle': 'mover sin destino'})
-                    continue
-                # Se mira el destino justo antes de mover para no pisar nada creado mientras tanto.
-                if destino.exists():
-                    detalle = f'el destino ya existe, no se sobrescribe {destino}'
-                    fallos.append({'origen': accion.origen, 'detalle': detalle})
-                    continue
-                destino.parent.mkdir(parents=True, exist_ok=True)
-                Path(accion.origen).replace(destino)
-            elif accion.tipo == 'crear_carpeta':
-                from pathlib import Path
-
-                Path(accion.origen).mkdir(parents=True, exist_ok=True)
-            movidos.append(accion)
+            _ejecutar_accion(accion)
+            movidos.append(accion_obj)
         except Exception as fallo:  # noqa: BLE001
-            fallos.append({'origen': accion.origen, 'detalle': str(fallo)})
+            fallos.append({'origen': accion_obj.origen, 'detalle': str(fallo)})
     return {'movidos': movidos, 'fallos': fallos, 'total': len(movidos)}
 
 
@@ -205,9 +284,32 @@ def aplicar_manifiesto(
     autorizar=None,
 ) -> dict:
     # Ejecutor unico de manifiestos persistentes de toda la suite de herramientas.
-    plan = cargar_plan(ruta_plan)
     verificar_escritura(f'aplicar {herramienta}')
+    plan = cargar_plan(ruta_plan)
     acciones = [dict(accion) for accion in plan.get('acciones', [])]
+    # Valida el contrato del manifiesto antes de tocar el disco.
+    plan_herramienta = str(plan.get('herramienta', ''))
+    if plan_herramienta and plan_herramienta != herramienta:
+        raise ErrorIntegridad(
+            f'el manifiesto pertenece a {plan_herramienta}, no a {herramienta}'
+        )
+    base = Path(espacio_trabajo).expanduser().resolve() if espacio_trabajo else Path.cwd().resolve()
+    if not base.is_dir():
+        raise ErrorIntegridad(f'la raiz de trabajo no existe {base}')
+    workspace_activo = modulo_workspace.workspace_id(base)
+    workspace_manifesto = str(plan.get('workspace_id', ''))
+    if workspace_manifesto and workspace_manifesto != workspace_activo:
+        raise ErrorIntegridad(
+            f'el manifiesto pertenece al workspace {workspace_manifesto}, '
+            f'no a {workspace_activo}'
+        )
+    for accion in acciones:
+        for clave in ('origen', 'destino'):
+            valor = accion.get(clave)
+            if valor and not modulo_workspace.esta_contenida(base, Path(str(valor))):
+                raise ErrorIntegridad(
+                    f'la accion contiene una ruta fuera del workspace: {valor}'
+                )
     id_plan = ruta_plan.stem
     id_ejec = runlog.iniciar_ejecucion(
         herramienta, 'aplicar', espacio_trabajo=espacio_trabajo, id_plan=id_plan
@@ -297,9 +399,11 @@ def aplicar_manifiesto(
     }
 
 
-def aplicar_plan_persistente(ruta_plan: Path) -> dict:
+def aplicar_plan_persistente(ruta_plan: Path, espacio_trabajo: str = '') -> dict:
     # Compatibilidad con la forma antigua del resultado del ejecutor.
-    resultado = aplicar_manifiesto(ruta_plan, 'plan')
+    plan = cargar_plan(ruta_plan)
+    base = espacio_trabajo or str(plan.get('workspace_root') or '')
+    resultado = aplicar_manifiesto(ruta_plan, 'plan', espacio_trabajo=base)
     return {
         'movidos': resultado['movidos'],
         'fallos': resultado['fallidos'],

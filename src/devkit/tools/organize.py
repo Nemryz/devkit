@@ -7,10 +7,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from devkit.core import paths, runlog, safety
+from devkit.core import workspace as modulo_workspace
 from devkit.errors import ErrorOrganizar
 
 # Carpetas que nunca entran en el plan, igual que en el resto del toolkit.
-CARPETAS_PROTEGIDAS = {'.git', '.idea', '.venv', '.vscode', 'src', 'tests'}
+CARPETAS_PROTEGIDAS = {'.git', '.devkit', '.idea', '.venv', '.vscode', 'src', 'tests'}
 # Tabla de firmas binarias por magic number inicial y tipo.
 FIRMAS = (
     (b'\xff\xd8\xff', 'imagen', '.jpg'),
@@ -216,7 +217,10 @@ def escanear_organize(
     archivos = [ruta for ruta in archivos if carpeta_destino not in ruta.resolve().parents]
     plan = construir_plan(base, carpeta_destino, archivos)
     id_ejec = runlog.iniciar_ejecucion('organize', 'plan', espacio_trabajo=str(base))
-    ruta_plan = safety.guardar_plan(id_ejec, 'organize', plan['manifest'])
+    wid = modulo_workspace.workspace_id(base)
+    ruta_plan = safety.guardar_plan(
+        id_ejec, 'organize', plan['manifest'], workspace_id=wid, workspace_root=str(base)
+    )
     runlog.registrar_ejecucion(
         'organize', ['plan'], inicio, 0, 0, 'plan',
         espacio_trabajo=str(base), id_plan=id_ejec, id_ejecucion=id_ejec,

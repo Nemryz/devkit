@@ -7,10 +7,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from devkit.core import paths, runlog, safety
+from devkit.core import workspace as modulo_workspace
 from devkit.errors import ErrorDuplicados
 
 # Carpetas que nunca entran en el escaneo, igual que en trim.
-CARPETAS_PROTEGIDAS = {'.git', '.idea', '.venv', '.vscode', 'src', 'tests'}
+CARPETAS_PROTEGIDAS = {'.git', '.devkit', '.idea', '.venv', '.vscode', 'src', 'tests'}
 # Tropieza por defecto para no mover mas de esto en una sola pasada.
 TOPE_BYTES = 1024 * 1024 * 1024
 # Primeros bytes que se leen para el pre hash parcial.
@@ -236,7 +237,10 @@ def escanear_dedupe(
     grupos = construir_grupos(archivos)
     plan = construir_plan(grupos, tope)
     id_ejec = runlog.iniciar_ejecucion('dedupe', 'escanear', espacio_trabajo=str(base))
-    ruta_plan = safety.guardar_plan(id_ejec, 'dedupe', plan['acciones'])
+    wid = modulo_workspace.workspace_id(base)
+    ruta_plan = safety.guardar_plan(
+        id_ejec, 'dedupe', plan['acciones'], workspace_id=wid, workspace_root=str(base)
+    )
     runlog.registrar_ejecucion(
         'dedupe', ['escanear'], inicio, 0, 0, 'escanear',
         espacio_trabajo=str(base), id_plan=id_ejec, id_ejecucion=id_ejec,

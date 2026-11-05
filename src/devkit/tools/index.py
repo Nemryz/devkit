@@ -5,6 +5,7 @@ import json
 import os
 import sqlite3
 import time
+import uuid
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
@@ -52,6 +53,47 @@ def ruta_indice(raiz: Path | None = None, crear: bool = True) -> Path:
     return paths.directorio_estado() / NOMBRE_BD
 
 
+def _bloquear_reconstruccion(destino: Path):
+    # Cerrojo entre procesos para que dos reconstrucciones no compitan por el temporal.
+
+    class _Cerrojo:
+        def __init__(self, ruta_cerrojo: Path):
+            self.ruta_cerrojo = ruta_cerrojo
+            self.descriptor = None
+            self.con_cerrojo = False
+
+        def __enter__(self):
+            self.ruta_cerrojo.parent.mkdir(parents=True, exist_ok=True)
+            self.descriptor = os.open(
+                str(self.ruta_cerrojo),
+                os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, 'O_BINARY', 0),
+            )
+            try:
+                import msvcrt
+
+                os.lseek(self.descriptor, 0, os.SEEK_SET)
+                msvcrt.locking(self.descriptor, msvcrt.LK_LOCK, 1)
+                self.con_cerrojo = True
+            except (ImportError, OSError):
+                self.con_cerrojo = False
+            return self
+
+        def __exit__(self, *args):
+            if self.descriptor is not None:
+                if self.con_cerrojo:
+                    try:
+                        import msvcrt
+
+                        os.lseek(self.descriptor, 0, os.SEEK_SET)
+                        msvcrt.locking(self.descriptor, msvcrt.LK_UNLCK, 1)
+                    except OSError:
+                        pass
+                os.close(self.descriptor)
+            return False
+
+    return _Cerrojo(destino.with_name(destino.name + '.lock'))
+
+
 def _abrir(ruta: Path) -> sqlite3.Connection:
     # Abre la base con FTS5 habilitado y crea las tablas si faltan.
     ruta.parent.mkdir(parents=True, exist_ok=True)
@@ -89,7 +131,7 @@ def construir_indice(raiz: Path) -> dict:
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
     destino = ruta_indice(raiz)
-    temporal = destino.with_name(destino.name + '.tmp')
+    temporal = destino.with_name(f'{destino.name}.{uuid.uuid4().hex}.tmp')
     # Limpia restos de una construccion anterior interrumpida.
     for sufijo in ('', '-wal', '-shm', '-journal'):
         with suppress(OSError):
@@ -97,41 +139,42 @@ def construir_indice(raiz: Path) -> dict:
     insertados = 0
     actualizados = 0
     try:
-        conexion = _abrir(temporal)
-        try:
-            for ruta in sorted(base.rglob('*.md')):
-                protegidas = {'.git', 'node_modules', '__pycache__'}
-                if any(parte in protegidas for parte in ruta.relative_to(base).parts):
-                    continue
-                try:
-                    titulo, cuerpo, palabras, mtime = _extraer_nota(ruta)
-                except OSError:
-                    continue
-                conexion.execute(
-                    'INSERT INTO notas (ruta, titulo, creado, palabras, mtime) '
-                    'VALUES (?, ?, ?, ?, ?)',
-                    (str(ruta), titulo, str(datetime.now(UTC).date()), palabras, mtime),
-                )
-                conexion.execute(
-                    'INSERT INTO notas_fts (titulo, cuerpo, ruta) VALUES (?, ?, ?)',
-                    (titulo, cuerpo, str(ruta)),
-                )
-                insertados += 1
-            conexion.commit()
-            # Fuerza el checkpoint y abandona el modo WAL para no dejar sidecars.
-            conexion.execute('PRAGMA wal_checkpoint(TRUNCATE)')
-            conexion.execute('PRAGMA journal_mode=DELETE')
-            conexion.commit()
-            comprobacion = conexion.execute('PRAGMA integrity_check').fetchone()
-            if comprobacion is None or comprobacion[0] != 'ok':
-                raise ErrorIndex('el indice reconstruido no supera integrity_check')
-        finally:
-            conexion.close()
-        # Sustituye el indice anterior de forma atomica; limpia sidecars viejos.
-        for sufijo in ('-wal', '-shm', '-journal'):
-            with suppress(OSError):
-                Path(str(destino) + sufijo).unlink()
-        os.replace(str(temporal), str(destino))
+        with _bloquear_reconstruccion(destino):
+            conexion = _abrir(temporal)
+            try:
+                for ruta in sorted(base.rglob('*.md')):
+                    protegidas = {'.git', 'node_modules', '__pycache__'}
+                    if any(parte in protegidas for parte in ruta.relative_to(base).parts):
+                        continue
+                    try:
+                        titulo, cuerpo, palabras, mtime = _extraer_nota(ruta)
+                    except OSError:
+                        continue
+                    conexion.execute(
+                        'INSERT INTO notas (ruta, titulo, creado, palabras, mtime) '
+                        'VALUES (?, ?, ?, ?, ?)',
+                        (str(ruta), titulo, str(datetime.now(UTC).date()), palabras, mtime),
+                    )
+                    conexion.execute(
+                        'INSERT INTO notas_fts (titulo, cuerpo, ruta) VALUES (?, ?, ?)',
+                        (titulo, cuerpo, str(ruta)),
+                    )
+                    insertados += 1
+                conexion.commit()
+                # Fuerza el checkpoint y abandona el modo WAL para no dejar sidecars.
+                conexion.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+                conexion.execute('PRAGMA journal_mode=DELETE')
+                conexion.commit()
+                comprobacion = conexion.execute('PRAGMA integrity_check').fetchone()
+                if comprobacion is None or comprobacion[0] != 'ok':
+                    raise ErrorIndex('el indice reconstruido no supera integrity_check')
+            finally:
+                conexion.close()
+            # Sustituye el indice anterior de forma atomica; limpia sidecars viejos.
+            for sufijo in ('-wal', '-shm', '-journal'):
+                with suppress(OSError):
+                    Path(str(destino) + sufijo).unlink()
+            os.replace(str(temporal), str(destino))
     except (OSError, ErrorIndex) as fallo:
         for sufijo in ('', '-wal', '-shm', '-journal'):
             with suppress(OSError):

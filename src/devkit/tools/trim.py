@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from devkit.core import runlog, safety
+from devkit.core import workspace as modulo_workspace
 from devkit.errors import ErrorLimpieza
 
 # Carpetas que se consideran limpiables por defecto en cualquier proyecto.
@@ -22,7 +23,7 @@ CARPETAS_LIMPIABLES = {
     'node_modules',
 }
 # Carpetas que nunca entran en el plan, aunque el usuario las pida por error.
-CARPETAS_PROTEGIDAS = {'.git', '.idea', '.venv', '.vscode', 'src', 'tests'}
+CARPETAS_PROTEGIDAS = {'.git', '.devkit', '.idea', '.venv', '.vscode', 'src', 'tests'}
 # Sufijos de archivo que se consideran artefactos generados.
 SUFIJOS_TEMPORALES = {'.log', '.pyc', '.pyo', '.tmp'}
 # Tropieza por defecto para no mover mas de esto en una sola pasada.
@@ -154,6 +155,9 @@ def construir_plan(candidatos: list[dict], tope: int = TOPE_BYTES) -> dict:
             with suppress(OSError):
                 fila['mtime'] = Path(a['ruta']).stat().st_mtime
                 fila['hash'] = safety.hash_contenido(Path(a['ruta']))
+        else:
+            with suppress(OSError):
+                fila['hash'] = safety.hash_arbol(Path(a['ruta']))
         candidatos.append(fila)
     return {
         'acciones': seleccion,
@@ -171,7 +175,10 @@ def escanear_trim(raiz: Path, incluir_venv: bool = False, edad_dias: int = 7) ->
     candidatos = escanear(base, incluir_venv, edad_dias)
     plan = construir_plan(candidatos)
     id_ejec = runlog.iniciar_ejecucion('trim', 'escanear', espacio_trabajo=str(base))
-    ruta_plan = safety.guardar_plan(id_ejec, 'trim', plan['manifest'])
+    wid = modulo_workspace.workspace_id(base)
+    ruta_plan = safety.guardar_plan(
+        id_ejec, 'trim', plan['manifest'], workspace_id=wid, workspace_root=str(base)
+    )
     runlog.registrar_ejecucion(
         'trim', ['escanear'], inicio, 0, 0, 'escanear',
         espacio_trabajo=str(base), id_plan=id_ejec, id_ejecucion=id_ejec,

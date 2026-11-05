@@ -9,12 +9,25 @@ from pydantic import BaseModel, ConfigDict, Field
 from devkit.core import paths
 
 
+class ConfiguracionAlmacenamiento(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+
+    perfil: str = 'global'
+    state: str | None = None
+    config: str | None = None
+    cache: str | None = None
+    plans: str | None = None
+    journal: str | None = None
+
+
 class Configuracion(BaseModel):
     model_config = ConfigDict(extra='ignore')
 
     raices: list[str] = Field(default_factory=list)
     retencion_dias: int = 180
     idioma: str = 'es'
+    perfil: str = 'global'
+    storage: ConfiguracionAlmacenamiento = Field(default_factory=ConfiguracionAlmacenamiento)
 
 
 def ruta_config() -> Path:

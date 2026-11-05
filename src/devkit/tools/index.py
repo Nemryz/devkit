@@ -55,6 +55,8 @@ def _abrir(ruta: Path) -> sqlite3.Connection:
     ruta.parent.mkdir(parents=True, exist_ok=True)
     # El timeout serializa procesos simultaneos en lugar de fallar con base bloqueada.
     conexion = sqlite3.connect(str(ruta), timeout=5.0)
+    # WAL permite lecturas concurrentes durante la escritura de otro proceso.
+    conexion.execute('PRAGMA journal_mode=WAL')
     conexion.execute(
         'CREATE VIRTUAL TABLE IF NOT EXISTS notas_fts USING fts5('
         'titulo, cuerpo, ruta, tokenize="unicode61")'
@@ -169,6 +171,8 @@ def actualizar_indice(raiz: Path, ruta_bd: Path | None = None) -> dict:
     conexion = _abrir(destino)
     actualizados = 0
     insertados = 0
+    # Transaccion inmediata para que el SELECT y el INSERT no compitan entre procesos.
+    conexion.execute('BEGIN IMMEDIATE')
     for ruta in sorted(base.rglob('*.md')):
         protegidas = {'.git', 'node_modules', '__pycache__'}
         if any(parte in protegidas for parte in ruta.relative_to(base).parts):

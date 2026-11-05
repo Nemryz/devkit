@@ -6,27 +6,35 @@ Comprueba el entorno antes de ejecutar cualquier otra herramienta. Revisa versio
 
 ## backup
 
-Pendiente. Generara un archivo cifrado con manifiesto SHA-256 y una prueba de restauracion obligatoria.
+Genera un archivo cifrado con manifiesto SHA-256 y prueba de restauracion obligatoria. Crea el contenedor 7z con AES-256 y cabecera cifrada, escribe el manifiesto y verifica extrayendo en temporal.
 
 ## trim
 
-Pendiente. Limpiara caches y artefactos con plan previo, papelera de Windows y journal.
+Limpia caches y artefactos con plan previo, papelera de Windows y journal transaccional. Excluye .git, src y tests. Respeta DEVKIT_READONLY. El plan incluye manifiesto firmado para aplicar sin reescanear el arbol en Bloque D.
 
 ## dedupe
 
-Pendiente. Agrupara por tamaño, confirmara con BLAKE3 y movera los duplicados a la papelera.
+Agrupa por tamaño, confirma con BLAKE3 (prehash parcial y completo) y mueve los duplicados a la papelera. Conserva la ruta mas corta y el mas antiguo. Incluye resumen por extension y filtro de OneDrive.
 
 ## health
 
-Pendiente. Generara un informe de memoria, disco, SMART, bateria, Defender, actualizaciones e inicio.
+Genera un informe de memoria, disco, SMART, bateria, Defender, actualizaciones, inicio y eventos. Distingue ok, aviso, error y unknown para no fingir salud cuando no hay datos.
+
+## nice
+
+Envuelve un proceso hijo con prioridad en bajo (BELOW_NORMAL_PRIORITY_CLASS) y tiempo maximo. Mide memoria pico mientras corre con un hilo. Si SetInformationJobObject devuelve 24, cierra el Job y sigue sin limite antes que romper. Registra pico en el journal.
 
 ## organize
 
-Pendiente. Clasificara por extension, firma binaria y año, con confirmacion archivo por archivo.
+Clasifica por extension, firma binaria y año, con confirmacion archivo por archivo o --todos. Resuelve colisiones con _2, _3. El plan incluye manifiesto firmado para Bloque D.
 
 ## idea
 
-Pendiente. Creara y validara notas Markdown con frontmatter en la carpeta de proyectos.
+Crea y valida notas Markdown con frontmatter (titulo, creado, etiquetas, estado). Revisa enlaces rotos y campos obligatorios. Avisa si el titulo ya existe.
+
+## index
+
+Construye un indice SQLite con FTS5 sobre las notas. Permite buscar, actualizar de forma incremental por mtime y exportar a JSON. El indice vive en %LOCALAPPDATA%\devkit\index.sqlite.
 
 ## ocr
 

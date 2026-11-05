@@ -161,9 +161,8 @@ def construir_indice(raiz: Path) -> dict:
                     )
                     insertados += 1
                 conexion.commit()
-                # Fuerza el checkpoint y abandona el modo WAL para no dejar sidecars.
+                # Fuerza el checkpoint para que todo quede en el archivo principal.
                 conexion.execute('PRAGMA wal_checkpoint(TRUNCATE)')
-                conexion.execute('PRAGMA journal_mode=DELETE')
                 conexion.commit()
                 comprobacion = conexion.execute('PRAGMA integrity_check').fetchone()
                 if comprobacion is None or comprobacion[0] != 'ok':

@@ -402,6 +402,11 @@ def comando_organize_aplicar(
         '--no-ignorar-onedrive',
         help='Permite entrar en rutas de OneDrive.',
     ),
+    plan: Path | None = typer.Option(
+        None,
+        '--plan',
+        help='Aplica el manifiesto guardado por organize plan sin reescanear.',
+    ),
     formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
 ) -> None:
     # Solo mueve cuando el usuario acepta con --todos o confirma archivo por archivo.
@@ -411,7 +416,7 @@ def comando_organize_aplicar(
     try:
         ignorar = not no_ignorar_onedrive
         resultado = modulo_organize.aplicar_organize(
-            raiz, destino, 0, ignorar, todos, por_archivo
+            raiz, destino, 0, ignorar, todos, por_archivo, plan
         )
     except ErrorBase as fallo:
         salir_con_error('organize aplicar', fallo, formato)

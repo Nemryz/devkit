@@ -177,9 +177,15 @@ def construir_plan(raiz: Path, destino: Path, archivos: list[Path]) -> dict:
     manifest = []
     for a in acciones:
         ruta = Path(a['origen'])
-        tamano = ruta.stat().st_size if ruta.exists() else 0
+        datos = ruta.stat() if ruta.exists() else None
         manifest.append(
-            {'origen': a['origen'], 'destino': a['destino'], 'tipo': 'mover', 'tamano': tamano}
+            {
+                'origen': a['origen'],
+                'destino': a['destino'],
+                'tipo': 'mover',
+                'tamano': datos.st_size if datos else 0,
+                'mtime': datos.st_mtime if datos else 0,
+            }
         )
     return {
         'acciones': acciones,
@@ -208,7 +214,7 @@ def escanear_organize(
     edad_dias: int = 0,
     ignorar_onedrive: bool = True,
 ) -> dict:
-    # Construye el plan sin tocar el disco y lo registra en el journal.
+    # Construye el plan sin tocar el disco y guarda su manifiesto persistente.
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
     carpeta_destino = Path(destino).expanduser().resolve() if destino else base / 'Organizados'
@@ -218,7 +224,11 @@ def escanear_organize(
     # No reescanear el destino ya organizado.
     archivos = [ruta for ruta in archivos if carpeta_destino not in ruta.resolve().parents]
     plan = construir_plan(base, carpeta_destino, archivos)
-    runlog.registrar_ejecucion('organize', ['plan'], inicio, 0, 0, 'plan')
+    id_ejec = runlog.iniciar_ejecucion('organize', 'plan', espacio_trabajo=str(base))
+    ruta_plan = safety.guardar_plan(id_ejec, 'organize', plan['manifest'])
+    runlog.registrar_ejecucion(
+        'organize', ['plan'], inicio, 0, 0, 'plan', espacio_trabajo=str(base), id_plan=id_ejec
+    )
     return {
         'herramienta': 'organize',
         'accion': 'plan',
@@ -232,6 +242,7 @@ def escanear_organize(
         'por_tipo': plan['por_tipo'],
         'por_anio': plan['por_anio'],
         'acciones': plan['acciones'],
+        'plan_persistente': str(ruta_plan),
         'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
     }
 
@@ -258,6 +269,25 @@ def _confirmar(accion: dict, siempre: bool) -> bool:
     return respuesta != 'a'
 
 
+def _ejecutar_acciones(
+    manifiesto: list[dict],
+    siempre: bool,
+    movidos: list[dict],
+    fallidos: list[dict],
+) -> None:
+    # Confirma campo por campo y aplica cada movimiento pasando por el guardian.
+    for accion in manifiesto:
+        accion['_todos'] = siempre
+        if _confirmar(accion, siempre):
+            if accion.get('_todos') is True:
+                siempre = True
+            try:
+                _mover(Path(accion['origen']), Path(accion['destino']))
+                movidos.append({k: v for k, v in accion.items() if not k.startswith('_')})
+            except ErrorOrganizar as fallo:
+                fallidos.append({'ruta': accion['origen'], 'detalle': str(fallo)})
+
+
 def aplicar_organize(
     raiz: Path,
     destino: Path | None = None,
@@ -265,58 +295,66 @@ def aplicar_organize(
     ignorar_onedrive: bool = True,
     todos: bool = False,
     por_archivo: bool = False,
+    plan_persistente: Path | None = None,
 ) -> dict:
-    # Ejecuta el plan moviendo cada archivo a su ruta propuesta.
+    # Aplica el manifiesto validado sin reescanear el arbol cuando ya existe un plan.
     safety.verificar_escritura('organizar archivos')
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
     carpeta_destino = Path(destino).expanduser().resolve() if destino else base / 'Organizados'
     if str(carpeta_destino) == str(base):
         carpeta_destino = base / 'Organizados'
-    archivos = recolectar_archivos(base, ignorar_onedrive, edad_dias)
-    archivos = [ruta for ruta in archivos if carpeta_destino not in ruta.resolve().parents]
-    plan = construir_plan(base, carpeta_destino, archivos)
     if por_archivo and not todos:
         # Sin --todos y sin reloj interactivo, aborta para obligar a elegir el modo.
         import sys
 
         if not sys.stdin.isatty():
             raise ErrorOrganizar('sin --todos ni tty no se puede confirmar archivo por archivo')
-    movidos = []
-    fallidos = []
-    siempre = todos
-    abortar = False
-    for accion in plan['acciones']:
-        if abortar:
-            break
-        accion['_todos'] = siempre
-        if _confirmar(accion, siempre):
-            if accion.get('_todos'):
-                siempre = True
-            try:
-                origen = Path(accion['origen'])
-                if not origen.is_file():
-                    fallidos.append({'ruta': accion['origen'], 'detalle': 'ya no existe'})
-                    continue
-                # Si el arbol cambio entre plan y aplicar, se aborta para no pisar.
-                nombre = accion['origen']
-                if origen.resolve() != Path(nombre).resolve() and (
-                    origen.stat().st_mtime != Path(nombre).stat().st_mtime
-                ):
-                    fallidos.append({'ruta': nombre, 'detalle': 'cambio entre plan y aplicar'})
-                    continue
-                _mover(origen, Path(accion['destino']))
-                movidos.append({k: v for k, v in accion.items() if not k.startswith('_')})
-            except ErrorOrganizar as fallo:
-                fallidos.append({'ruta': accion['origen'], 'detalle': str(fallo)})
-        else:
-            # Si el usuario pulsa 'a' esperaba abortar, lo trata como omitido.
-            if accion.get('_todos') is False and not siempre:
-                # Omision normal, sin detalle.
-                pass
+    if plan_persistente is not None:
+        plan = safety.cargar_plan(plan_persistente)
+        manifiesto = plan.get('acciones', [])
+        id_ejec = str(plan.get('id_ejecucion', plan_persistente.stem))
+        ruta_plan = plan_persistente
+    else:
+        archivos = recolectar_archivos(base, ignorar_onedrive, edad_dias)
+        archivos = [ruta for ruta in archivos if carpeta_destino not in ruta.resolve().parents]
+        plan_local = construir_plan(base, carpeta_destino, archivos)
+        manifiesto = plan_local['manifest']
+        id_ejec = runlog.iniciar_ejecucion('organize', 'aplicar', espacio_trabajo=str(base))
+        ruta_plan = safety.guardar_plan(id_ejec, 'organize', manifiesto)
+    validacion = safety._validar_arbol({'acciones': manifiesto})
+    if validacion:
+        safety.actualizar_estado_plan(ruta_plan, 'fallido')
+        runlog.registrar_ejecucion(
+            'organize', ['aplicar'], inicio, 2, 0, 'error',
+            espacio_trabajo=str(base), id_plan=id_ejec,
+        )
+        return {
+            'herramienta': 'organize',
+            'accion': 'aplicar',
+            'estado': 'error',
+            'codigo': 2,
+            'raiz': str(base),
+            'destino': str(carpeta_destino),
+            'total_movidos': 0,
+            'total_bytes': 0,
+            'movidos': [],
+            'fallidos': validacion,
+            'plan_persistente': str(ruta_plan),
+            'fecha': datetime.now(UTC).isoformat(),
+            'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
+        }
+    movidos: list[dict] = []
+    fallidos: list[dict] = []
+    _ejecutar_acciones(manifiesto, todos, movidos, fallidos)
     estado = 'correcto' if not fallidos else 'error'
     codigo = 0 if estado == 'correcto' else 2
-    runlog.registrar_ejecucion('organize', ['aplicar'], inicio, codigo, 0, estado)
+    plan_aplicado = 'aplicado' if estado == 'correcto' else 'fallido'
+    safety.actualizar_estado_plan(ruta_plan, plan_aplicado)
+    runlog.registrar_ejecucion(
+        'organize', ['aplicar'], inicio, codigo, 0, estado,
+        espacio_trabajo=str(base), id_plan=id_ejec,
+    )
     return {
         'herramienta': 'organize',
         'accion': 'aplicar',
@@ -332,6 +370,7 @@ def aplicar_organize(
         else 0,
         'movidos': movidos,
         'fallidos': fallidos,
+        'plan_persistente': str(ruta_plan),
         'fecha': datetime.now(UTC).isoformat(),
         'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
     }

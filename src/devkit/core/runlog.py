@@ -83,6 +83,7 @@ def registrar_ejecucion(
     codigo: int,
     memoria_pico: int,
     detalle: str = '',
+    espacio_trabajo: str = '',
 ) -> Path:
     # Mantiene compatibilidad con el journal antiguo de una linea.
     id_ejecucion = iniciar_ejecucion(herramienta, argumentos[0] if argumentos else 'ejecutar')
@@ -98,6 +99,7 @@ def registrar_ejecucion(
         'memoria_pico': memoria_pico,
         'detalle': detalle,
         'estado': estado,
+        'espacio_trabajo': espacio_trabajo,
         'pid': os.getpid(),
     }
     with ruta.open('a', encoding='utf-8') as archivo:

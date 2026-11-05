@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -194,16 +193,13 @@ def construir_plan(raiz: Path, destino: Path, archivos: list[Path]) -> dict:
 
 
 def _mover(origen: Path, destino: Path) -> None:
-    # Mueve dentro del mismo volumen o entre volumenes con copia y borrado.
-    destino.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        if origen.parent == destino.parent:
-            origen.replace(destino)
-        else:
-            # shutil.move conserva enlaces, asi que no aplica a simbolicos ya filtrados.
-            shutil.move(str(origen), str(destino))
-    except OSError as fallo:
-        raise ErrorOrganizar(f'no se pudo mover {origen} a {destino} porque {fallo}') from fallo
+    # Mueve pasando por el guardian centralizado de safety.ejecutar_plan.
+    plan = safety.Plan()
+    plan.agregar(safety.Accion(tipo='mover', origen=str(origen), destino=str(destino)))
+    resultado = safety.ejecutar_plan(plan, 'organizar archivos')
+    if resultado['fallos']:
+        detalle = resultado['fallos'][0]['detalle']
+        raise ErrorOrganizar(f'no se pudo mover {origen} a {destino} porque {detalle}')
 
 
 def escanear_organize(

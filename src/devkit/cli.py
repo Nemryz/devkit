@@ -108,17 +108,29 @@ def principal(
 
 @app.command('capabilities')
 def comando_capabilities(
+    clase: str | None = typer.Option(
+        None, '--clase', help='Filtrar por clase: capability, discovery, administration.'
+    ),
     formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida, json o tabla.'),
 ) -> None:
     # Lista las capacidades de las herramientas para que agentes las descubran.
+    clasificacion = modulo_capacidades.listar_clasificacion()
+    capacidades = modulo_capacidades.listar_capacidades()
+    if clase is not None:
+        capacidades = [c for c in capacidades if c.get('clase') == clase]
+        # Incluir comandos de discovery/administration si se filtra por clase.
+        if clase in ('discovery', 'administration'):
+            for nombre, cls in clasificacion.items():
+                if cls == clase and not any(c['name'] == nombre for c in capacidades):
+                    capacidades.append({'name': nombre, 'clase': cls})
     resultado = {
         'herramienta': 'devkit',
         'accion': 'capabilities',
         'estado': 'correcto',
         'codigo': 0,
         'version_contrato': modulo_capacidades.VERSION_CONTRATO,
-        'total': len(modulo_capacidades.listar_capacidades()),
-        'capacidades': modulo_capacidades.listar_capacidades(),
+        'total': len(capacidades),
+        'capacidades': capacidades,
     }
     emitir(resultado, formato=formato)
     raise typer.Exit(code=resultado['codigo'])
@@ -169,7 +181,7 @@ def comando_schema(
             formato=formato,
         )
         raise typer.Exit(code=2)
-    entradas = capacidad.get('inputs', {})
+    entradas = capacidad.get('actions', {})
     salidas = capacidad.get('outputs', {})
     if accion not in entradas and accion not in salidas:
         emitir(
@@ -184,10 +196,11 @@ def comando_schema(
         'estado': 'correcto',
         'codigo': 0,
         'version_esquema': 1,
+        'version_contrato': modulo_capacidades.VERSION_CONTRATO,
         'herramienta_objetivo': herramienta,
         'accion_objetivo': accion,
-        'entrada': entradas.get(accion, {}),
-        'salida': salidas,
+        'entrada': entradas.get(accion, {}).get('params', {}),
+        'salida': entradas.get(accion, {}).get('outputs', salidas),
     }
     emitir(resultado, formato=formato)
     raise typer.Exit(code=resultado['codigo'])

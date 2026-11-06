@@ -481,6 +481,9 @@ def comando_trim_aplicar(
     dry_run: bool = typer.Option(
         False, '--dry-run', help='Simula la aplicacion sin tocar el disco.'
     ),
+    reanudar: bool = typer.Option(
+        False, '--reanudar', help='Reanuda una ejecucion interrumpida tras reconciliar.'
+    ),
     plan: Path | None = typer.Option(
         None,
         '--plan',
@@ -493,7 +496,9 @@ def comando_trim_aplicar(
         typer.echo('sin --forzar no se aplica el plan, usa trim escanear', err=True)
         raise typer.Exit(code=2)
     try:
-        resultado = modulo_trim.aplicar_trim(raiz, incluir_venv, edad_dias, plan, dry_run=dry_run)
+        resultado = modulo_trim.aplicar_trim(
+            raiz, incluir_venv, edad_dias, plan, dry_run=dry_run, reanudar=reanudar
+        )
     except ErrorBase as fallo:
         salir_con_error('trim aplicar', fallo, formato)
         return
@@ -538,6 +543,9 @@ def comando_dedupe_aplicar(
     dry_run: bool = typer.Option(
         False, '--dry-run', help='Simula la aplicacion sin tocar el disco.'
     ),
+    reanudar: bool = typer.Option(
+        False, '--reanudar', help='Reanuda una ejecucion interrumpida tras reconciliar.'
+    ),
     plan: Path | None = typer.Option(
         None,
         '--plan',
@@ -552,7 +560,7 @@ def comando_dedupe_aplicar(
     try:
         ignorar = not no_ignorar_onedrive
         resultado = modulo_dedupe.aplicar_dedupe(
-            raiz, edad_dias, ignorar, plan=plan, dry_run=dry_run
+            raiz, edad_dias, ignorar, plan=plan, dry_run=dry_run, reanudar=reanudar
         )
     except ErrorBase as fallo:
         salir_con_error('dedupe aplicar', fallo, formato)
@@ -604,6 +612,9 @@ def comando_organize_aplicar(
         '--no-ignorar-onedrive',
         help='Permite entrar en rutas de OneDrive.',
     ),
+    reanudar: bool = typer.Option(
+        False, '--reanudar', help='Reanuda una ejecucion interrumpida tras reconciliar.'
+    ),
     plan: Path | None = typer.Option(
         None,
         '--plan',
@@ -621,7 +632,7 @@ def comando_organize_aplicar(
     try:
         ignorar = not no_ignorar_onedrive
         resultado = modulo_organize.aplicar_organize(
-            raiz, destino, 0, ignorar, todos, por_archivo, plan, dry_run=dry_run
+            raiz, destino, 0, ignorar, todos, por_archivo, plan, dry_run=dry_run, reanudar=reanudar
         )
     except ErrorBase as fallo:
         salir_con_error('organize aplicar', fallo, formato)

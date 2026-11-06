@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -541,3 +542,143 @@ class Plan:
 
     def total(self) -> int:
         return len(self.acciones)
+
+def preflight_plan(ruta_plan, espacio_trabajo=''):
+    plan = cargar_plan(ruta_plan)
+    acciones = [dict(a) for a in plan.get('acciones', [])]
+    base = Path(espacio_trabajo).expanduser().resolve() if espacio_trabajo else Path.cwd().resolve()
+    if not base.is_dir():
+        raise ErrorIntegridad('la raiz de trabajo no existe ' + str(base))
+    # Comprobar espacio libre.
+    total_bytes = sum(int(a.get('tamano', 0)) for a in acciones)
+    try:
+        libre = shutil.disk_usage(str(base)).free
+    except OSError:
+        libre = None
+    if libre is not None and libre < total_bytes:
+        raise ErrorIntegridad(
+            'DISCO_LLENO: espacio libre insuficiente '
+            + str(libre) + ' < ' + str(total_bytes)
+        )
+    # Comprobar longitud de ruta y existencia de origen.
+    for accion in acciones:
+        for clave in ('origen', 'destino'):
+            valor = accion.get(clave)
+            if valor:
+                ruta = Path(str(valor))
+                if len(str(ruta)) > 260:
+                    raise ErrorIntegridad(
+                        'RUTA_DEMASIADO_LARGA: ' + str(valor)
+                    )
+        origen = Path(str(accion.get('origen', '')))
+        fuera = (
+            accion.get('tipo') != 'crear_carpeta'
+            and origen.exists()
+            and not modulo_workspace.esta_contenida(base, origen)
+        )
+        if fuera:
+            raise ErrorIntegridad(
+                'la accion contiene una ruta fuera del workspace: ' + str(origen)
+            )
+    # Comprobar que el destino base es escribible.
+    try:
+        prueba = base / '.devkit' / '.preflight_test'
+        prueba.parent.mkdir(parents=True, exist_ok=True)
+        prueba.write_text('ok', encoding='utf-8')
+        prueba.unlink()
+    except OSError as fallo:
+        raise ErrorIntegridad(
+            'PERMISO_DENEGADO: no se puede escribir en ' + str(base) + ': ' + str(fallo)
+        ) from fallo
+    return True
+
+
+# Clasificacion de errores de Windows.
+def clasificar_error_windows(fallo: Exception) -> str:
+    winerror = getattr(fallo, 'winerror', None)
+    if winerror in (32, 33):
+        return 'ARCHIVO_BLOQUEADO'
+    if winerror in (5, 19):
+        return 'PERMISO_DENEGADO'
+    if winerror == 112:
+        return 'DISCO_LLENO'
+    if winerror == 206:
+        return 'RUTA_DEMASIADO_LARGA'
+    if winerror == 183:
+        return 'DESTINO_OCUPADO'
+    if winerror in (2, 3):
+        return 'ORIGEN_DESAPARECIDO'
+    return 'ERROR_DESCONOCIDO'
+
+
+# Ejecutar accion con reintentos para errores transitorios.
+def _ejecutar_accion_con_reintento(accion: dict, max_intentos: int = 3):
+    import time as _time
+    intentos = 0
+    while True:
+        try:
+            _ejecutar_accion(accion)
+            return
+        except OSError as fallo:
+            codigo = clasificar_error_windows(fallo)
+            if codigo == 'ARCHIVO_BLOQUEADO' and intentos < max_intentos - 1:
+                espera = [0.1, 0.3, 0.9][intentos]
+                _time.sleep(espera)
+                intentos += 1
+                continue
+            raise
+
+
+# Reconciliacion de un plan interrumpido.
+def reconciliar_plan(ruta_plan: Path, espacio_trabajo: str = '') -> dict:
+    plan = cargar_plan(ruta_plan)
+    acciones = [dict(a) for a in plan.get('acciones', [])]
+    resultados = []
+    for accion in acciones:
+        origen = Path(str(accion.get('origen', '')))
+        destino = Path(str(accion.get('destino', '')))
+        tipo = str(accion.get('tipo', 'mover'))
+        hash_esperado = accion.get('hash')
+        tamano_esperado = accion.get('tamano')
+        # Verificar postcondicion.
+        origen_existe = origen.exists()
+        destino_existe = destino.exists() if str(destino) else False
+        if not origen_existe and destino_existe:
+            # Posiblemente completada: verificar hash.
+            if hash_esperado and destino.is_file():
+                try:
+                    if hash_contenido(destino) == hash_esperado:
+                        estado = 'COMPLETADA'
+                    else:
+                        estado = 'INCONSISTENTE'
+                except OSError:
+                    estado = 'INCONSISTENTE'
+            elif tamano_esperado is not None and destino.is_file():
+                if destino.stat().st_size == tamano_esperado:
+                    estado = 'COMPLETADA'
+                else:
+                    estado = 'INCONSISTENTE'
+            else:
+                estado = 'COMPLETADA'
+        elif origen_existe and not destino_existe:
+            estado = 'PENDIENTE'
+        elif origen_existe and destino_existe:
+            estado = 'AMBIGUA'
+        else:
+            estado = 'INCONSISTENTE'
+        resultados.append({
+            'origen': str(origen),
+            'destino': str(destino),
+            'tipo': tipo,
+            'estado': estado,
+        })
+    return {
+        'id_plan': ruta_plan.stem,
+        'total': len(acciones),
+        'resultados': resultados,
+        'pendientes': [r for r in resultados if r['estado'] == 'PENDIENTE'],
+        'ambiguas': [r for r in resultados if r['estado'] == 'AMBIGUA'],
+        'inconsistentes': [r for r in resultados if r['estado'] == 'INCONSISTENTE'],
+        'completadas': [r for r in resultados if r['estado'] == 'COMPLETADA'],
+    }
+

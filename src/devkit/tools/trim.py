@@ -204,6 +204,7 @@ def aplicar_trim(
     edad_dias: int = 7,
     plan: Path | None = None,
     dry_run: bool = False,
+    reanudar: bool = False,
 ) -> dict:
     # Aplica un manifiesto por el ejecutor unico, sin reescanear si ya existe.
     if not dry_run:

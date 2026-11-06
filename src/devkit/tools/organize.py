@@ -304,6 +304,7 @@ def aplicar_organize(
     por_archivo: bool = False,
     plan_persistente: Path | None = None,
     dry_run: bool = False,
+    reanudar: bool = False,
 ) -> dict:
     # Aplica (o simula) un manifiesto por el ejecutor unico, sin reescanear si ya existe.
     if not dry_run:

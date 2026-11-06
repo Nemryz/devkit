@@ -286,6 +286,7 @@ def aplicar_dedupe(
     tope: int = TOPE_BYTES,
     plan: Path | None = None,
     dry_run: bool = False,
+    reanudar: bool = False,
 ) -> dict:
     # Aplica (o simula) un manifiesto por el ejecutor unico, sin reescanear si ya existe.
     if not dry_run:

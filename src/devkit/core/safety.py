@@ -277,62 +277,6 @@ def _ejecutar_accion(accion: dict) -> None:
     raise ErrorIntegridad(f'tipo no permitido {tipo}')
 
 
-def _validar_identidad(base, plan, dry_run):
-    workspace_manifesto = str(plan.get('workspace_id', ''))
-    workspace_activo = modulo_workspace.leer_id(base)
-    if workspace_activo is None:
-        estado_identidad = 'sin_identidad'
-    elif not workspace_manifesto:
-        estado_identidad = 'manifiesto_sin_identidad'
-    elif workspace_manifesto == workspace_activo:
-        estado_identidad = 'coincide'
-    else:
-        estado_identidad = 'distinta'
-    es_compartido = (
-        estado_identidad in ('coincide', 'sin_identidad')
-        and workspace_activo is not None
-        and modulo_workspace.es_compartido(base)
-    )
-    if es_compartido:
-        estado_identidad = 'compartido'
-    if not dry_run:
-        if estado_identidad == 'distinta':
-            raise ErrorIntegridad(
-                'el manifiesto pertenece al workspace '
-                + workspace_manifesto
-                + ', no a '
-                + str(workspace_activo)
-            )
-        if estado_identidad == 'manifiesto_sin_identidad':
-            raise ErrorIntegridad(
-                'el manifiesto no declara workspace_id; no se puede verificar su origen'
-            )
-        if estado_identidad == 'compartido':
-            raise ErrorIntegridad(
-                'el workspace '
-                + str(workspace_activo)
-                + ' se ha visto bajo otra raiz; usa --permitir-compartido para continuar'
-            )
-    return estado_identidad
-
-
-def _validar_acciones_comunes(acciones, base):
-    for accion in acciones:
-        for clave in ('origen', 'destino'):
-            valor = accion.get(clave)
-            if valor and not modulo_workspace.esta_contenida(base, Path(str(valor))):
-                raise ErrorIntegridad(
-                    'la accion contiene una ruta fuera del workspace: ' + str(valor)
-                )
-    destinos = set()
-    for accion in acciones:
-        destino = str(accion.get('destino', ''))
-        if destino:
-            if destino in destinos:
-                raise ErrorIntegridad(
-                    'dos acciones comparten el mismo destino: ' + destino
-                )
-            destinos.add(destino)
 
 
 def _validar_identidad(base, plan, dry_run):

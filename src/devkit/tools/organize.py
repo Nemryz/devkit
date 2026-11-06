@@ -200,34 +200,25 @@ def construir_plan(raiz: Path, destino: Path, archivos: list[Path]) -> dict:
     }
 
 
-def escanear_organize(
+def analizar_organize(
     raiz: Path,
     destino: Path | None = None,
     edad_dias: int = 0,
     ignorar_onedrive: bool = True,
 ) -> dict:
-    # Construye el plan sin tocar el disco y guarda su manifiesto persistente.
+    # Analisis puro de organizacion, sin persistir manifiesto ni journal.
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
     carpeta_destino = Path(destino).expanduser().resolve() if destino else base / 'Organizados'
     if str(carpeta_destino) == str(base):
         carpeta_destino = base / 'Organizados'
     archivos = recolectar_archivos(base, ignorar_onedrive, edad_dias)
-    # No reescanear el destino ya organizado.
     archivos = [ruta for ruta in archivos if carpeta_destino not in ruta.resolve().parents]
     plan = construir_plan(base, carpeta_destino, archivos)
-    id_ejec = runlog.iniciar_ejecucion('organize', 'plan', espacio_trabajo=str(base))
-    wid = modulo_workspace.workspace_id(base)
-    ruta_plan = safety.guardar_plan(
-        id_ejec, 'organize', plan['manifest'], workspace_id=wid, workspace_root=str(base)
-    )
-    runlog.registrar_ejecucion(
-        'organize', ['plan'], inicio, 0, 0, 'plan',
-        espacio_trabajo=str(base), id_plan=id_ejec, id_ejecucion=id_ejec,
-    )
     return {
         'herramienta': 'organize',
-        'accion': 'plan',
+        'accion': 'analizar',
+        'manifest': plan['manifest'],
         'estado': 'correcto',
         'codigo': 0,
         'raiz': str(base),
@@ -238,9 +229,33 @@ def escanear_organize(
         'por_tipo': plan['por_tipo'],
         'por_anio': plan['por_anio'],
         'acciones': plan['acciones'],
-        'plan_persistente': str(ruta_plan),
         'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
     }
+
+
+def escanear_organize(
+    raiz: Path,
+    destino: Path | None = None,
+    edad_dias: int = 0,
+    ignorar_onedrive: bool = True,
+) -> dict:
+    # Construye el plan, guarda su manifiesto persistente y registra el escaneo.
+    analisis = analizar_organize(raiz, destino, edad_dias, ignorar_onedrive)
+    base = Path(analisis['raiz'])
+    inicio = time.perf_counter()
+    id_ejec = runlog.iniciar_ejecucion('organize', 'plan', espacio_trabajo=str(base))
+    wid = modulo_workspace.workspace_id(base)
+    ruta_plan = safety.guardar_plan(
+        id_ejec, 'organize', analisis['manifest'], workspace_id=wid, workspace_root=str(base)
+    )
+    runlog.registrar_ejecucion(
+        'organize', ['plan'], inicio, 0, 0, 'plan',
+        espacio_trabajo=str(base), id_plan=id_ejec, id_ejecucion=id_ejec,
+    )
+    resultado = dict(analisis)
+    resultado['accion'] = 'plan'
+    resultado['plan_persistente'] = str(ruta_plan)
+    return resultado
 
 
 def _confirmar(accion: dict, siempre: bool) -> bool:

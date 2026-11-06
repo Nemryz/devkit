@@ -209,9 +209,12 @@ def comando_buscar(
     termino: str = typer.Argument(..., help='Termino a buscar e identificar.'),
     raiz: Path | None = typer.Option(None, '--raiz', '-r', help='Carpeta de trabajo.'),
     limite: int = typer.Option(20, '--limite', help='Maximo de resultados por fuente.'),
+    duplicados: bool = typer.Option(
+        False, '--duplicados', help='Incluir analisis de duplicados (hashea el arbol).'
+    ),
     formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
 ) -> None:
-    # Busqueda e identificacion unificada para usuarios y agentes.
+    # Busqueda e identificacion unificada, solo lectura, para usuarios y agentes.
     base = None
     try:
         base = modulo_index.raiz_efectiva(raiz)
@@ -233,28 +236,58 @@ def comando_buscar(
         resultados['texto'] = modulo_index.buscar(base, termino, None, limite)
     except Exception as fallo:  # noqa: BLE001
         resultados['texto'] = {'estado': 'error', 'detalle': str(fallo)}
-    # Identificacion de archivos
+    # Identificacion de archivos (analisis puro, sin persistir)
     try:
-        resultados['archivos'] = modulo_organize.escanear_organize(base)
-    except Exception as fallo:  # noqa: BLE001
-        resultados['archivos'] = {'estado': 'error', 'detalle': str(fallo)}
-    # Duplicados
-    try:
-        resultados['duplicados'] = modulo_dedupe.escanear_dedupe(base, edad_dias=30)
-    except Exception as fallo:  # noqa: BLE001
-        resultados['duplicados'] = {'estado': 'error', 'detalle': str(fallo)}
-    # Filtrar archivos por termino en el nombre
-    if isinstance(resultados['archivos'], dict) and 'acciones' in resultados['archivos']:
+        analisis = modulo_organize.analizar_organize(base)
         term_lower = termino.lower()
         filtrados = [
-            a for a in resultados['archivos']['acciones']
+            a for a in analisis.get('acciones', [])
             if term_lower in str(a.get('origen', '')).lower()
-            or term_lower in str(a.get('nombre', '')).lower()
+            or term_lower in str(a.get('destino', '')).lower()
         ]
-        resultados['archivos']['acciones_filtradas'] = filtrados
-        resultados['archivos']['total_filtrados'] = len(filtrados)
+        analisis['acciones_filtradas'] = filtrados
+        analisis['total_filtrados'] = len(filtrados)
+        resultados['archivos'] = analisis
+    except Exception as fallo:  # noqa: BLE001
+        resultados['archivos'] = {'estado': 'error', 'detalle': str(fallo)}
+    # Duplicados (opt-in)
+    if duplicados:
+        try:
+            resultados['duplicados'] = modulo_dedupe.analizar_dedupe(base, edad_dias=30)
+        except Exception as fallo:  # noqa: BLE001
+            resultados['duplicados'] = {'estado': 'error', 'detalle': str(fallo)}
+    else:
+        resultados['duplicados'] = None
+    # Determinar estado global y codigo de salida.
+    fuentes_con_error = 0
+    fuentes_evaluadas = 0
+    val = resultados.get('texto')
+    if isinstance(val, dict):
+        fuentes_evaluadas += 1
+        if val.get('estado') == 'error':
+            fuentes_con_error += 1
+    val = resultados.get('archivos')
+    if isinstance(val, dict):
+        fuentes_evaluadas += 1
+        if val.get('estado') == 'error':
+            fuentes_con_error += 1
+    if duplicados:
+        val = resultados.get('duplicados')
+        if isinstance(val, dict):
+            fuentes_evaluadas += 1
+            if val.get('estado') == 'error':
+                fuentes_con_error += 1
+    if fuentes_con_error == 0:
+        resultados['estado'] = 'correcto'
+        resultados['codigo'] = 0
+    elif fuentes_con_error < fuentes_evaluadas:
+        resultados['estado'] = 'parcial'
+        resultados['codigo'] = 1
+    else:
+        resultados['estado'] = 'error'
+        resultados['codigo'] = 2
     emitir(resultados, formato=formato)
-    raise typer.Exit(code=0)
+    raise typer.Exit(code=resultados['codigo'])
 @app.command('doctor')
 def comando_doctor(
     formato: str = typer.Option(

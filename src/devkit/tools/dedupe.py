@@ -224,30 +224,21 @@ def construir_plan(grupos: list[dict], tope: int = TOPE_BYTES) -> dict:
     }
 
 
-def escanear_dedupe(
+def analizar_dedupe(
     raiz: Path,
     edad_dias: int = 30,
     ignorar_onedrive: bool = True,
     tope: int = TOPE_BYTES,
 ) -> dict:
-    # Construye el plan sin tocar el disco y guarda su manifiesto persistente.
+    # Analisis puro de duplicados, sin persistir manifiesto ni journal.
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
     archivos = recolectar_archivos(base, ignorar_onedrive, edad_dias)
     grupos = construir_grupos(archivos)
     plan = construir_plan(grupos, tope)
-    id_ejec = runlog.iniciar_ejecucion('dedupe', 'escanear', espacio_trabajo=str(base))
-    wid = modulo_workspace.workspace_id(base)
-    ruta_plan = safety.guardar_plan(
-        id_ejec, 'dedupe', plan['acciones'], workspace_id=wid, workspace_root=str(base)
-    )
-    runlog.registrar_ejecucion(
-        'dedupe', ['escanear'], inicio, 0, 0, 'escanear',
-        espacio_trabajo=str(base), id_plan=id_ejec, id_ejecucion=id_ejec,
-    )
     return {
         'herramienta': 'dedupe',
-        'accion': 'escanear',
+        'accion': 'analizar',
         'estado': 'correcto',
         'codigo': 0,
         'raiz': str(base),
@@ -259,9 +250,33 @@ def escanear_dedupe(
         'resumen_extension': plan['resumen_extension'],
         'grupos': grupos,
         'acciones': plan['acciones'],
-        'plan_persistente': str(ruta_plan),
         'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
     }
+
+
+def escanear_dedupe(
+    raiz: Path,
+    edad_dias: int = 30,
+    ignorar_onedrive: bool = True,
+    tope: int = TOPE_BYTES,
+) -> dict:
+    # Construye el plan, guarda su manifiesto persistente y registra el escaneo.
+    analisis = analizar_dedupe(raiz, edad_dias, ignorar_onedrive, tope)
+    base = Path(analisis['raiz'])
+    inicio = time.perf_counter()
+    id_ejec = runlog.iniciar_ejecucion('dedupe', 'escanear', espacio_trabajo=str(base))
+    wid = modulo_workspace.workspace_id(base)
+    ruta_plan = safety.guardar_plan(
+        id_ejec, 'dedupe', analisis['acciones'], workspace_id=wid, workspace_root=str(base)
+    )
+    runlog.registrar_ejecucion(
+        'dedupe', ['escanear'], inicio, 0, 0, 'escanear',
+        espacio_trabajo=str(base), id_plan=id_ejec, id_ejecucion=id_ejec,
+    )
+    resultado = dict(analisis)
+    resultado['accion'] = 'escanear'
+    resultado['plan_persistente'] = str(ruta_plan)
+    return resultado
 
 
 def aplicar_dedupe(

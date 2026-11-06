@@ -223,9 +223,13 @@ def aplicar_trim(
             escaneo = escanear_trim(base, incluir_venv, edad_dias)
             ruta_plan = Path(escaneo['plan_persistente'])
             acciones = None
-    resultado = safety.aplicar_manifiesto(
-        ruta_plan, 'trim', espacio_trabajo=str(base), dry_run=dry_run, acciones=acciones
-    )
+    if dry_run:
+        if acciones is not None:
+            resultado = safety._simular_acciones(acciones, 'trim', base, autorizar=None)
+        else:
+            resultado = safety.simular_manifiesto(ruta_plan, 'trim', espacio_trabajo=str(base))
+    else:
+        resultado = safety.aplicar_manifiesto(ruta_plan, 'trim', espacio_trabajo=str(base))
     estado = 'simulado' if dry_run else ('correcto' if not resultado['fallidos'] else 'error')
     movidos = resultado['movidos']
     return {
@@ -244,4 +248,5 @@ def aplicar_trim(
         'fecha': datetime.now(UTC).isoformat(),
         'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
         'dry_run': dry_run,
+        'estado_identidad': resultado.get('estado_identidad', 'sin_identidad'),
     }

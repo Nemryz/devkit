@@ -289,9 +289,13 @@ def aplicar_dedupe(
     if ruta_plan is None and not dry_run:
         escaneo = escanear_dedupe(base, edad_dias, ignorar_onedrive, tope)
         ruta_plan = Path(escaneo['plan_persistente'])
-    resultado = safety.aplicar_manifiesto(
-        ruta_plan, 'dedupe', espacio_trabajo=str(base), dry_run=dry_run, acciones=acciones
-    )
+    if dry_run:
+        if acciones is not None:
+            resultado = safety._simular_acciones(acciones, 'dedupe', base, autorizar=None)
+        else:
+            resultado = safety.simular_manifiesto(ruta_plan, 'dedupe', espacio_trabajo=str(base))
+    else:
+        resultado = safety.aplicar_manifiesto(ruta_plan, 'dedupe', espacio_trabajo=str(base))
     movidos = resultado['movidos']
     estado = 'simulado' if dry_run else ('correcto' if not resultado['fallidos'] else 'error')
     return {
@@ -310,4 +314,5 @@ def aplicar_dedupe(
         'fecha': datetime.now(UTC).isoformat(),
         'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
         'dry_run': dry_run,
+        'estado_identidad': resultado.get('estado_identidad', 'sin_identidad'),
     }

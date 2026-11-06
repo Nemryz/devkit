@@ -316,14 +316,17 @@ def aplicar_organize(
         escaneo = escanear_organize(base, destino, edad_dias, ignorar_onedrive)
         ruta_plan = Path(escaneo['plan_persistente'])
     autorizar = None if (todos or dry_run) else _autorizar_por_archivo(False)
-    resultado = safety.aplicar_manifiesto(
-        ruta_plan,
-        'organize',
-        espacio_trabajo=str(base),
-        autorizar=autorizar,
-        dry_run=dry_run,
-        acciones=acciones,
-    )
+    if dry_run:
+        if acciones is not None:
+            resultado = safety._simular_acciones(acciones, 'organize', base, autorizar=autorizar)
+        else:
+            resultado = safety.simular_manifiesto(
+                ruta_plan, 'organize', espacio_trabajo=str(base), autorizar=autorizar
+            )
+    else:
+        resultado = safety.aplicar_manifiesto(
+            ruta_plan, 'organize', espacio_trabajo=str(base), autorizar=autorizar
+        )
     movidos = resultado['movidos']
     fallidos = resultado['fallidos']
     estado = 'simulado' if dry_run else ('correcto' if not fallidos else 'error')
@@ -344,4 +347,5 @@ def aplicar_organize(
         'fecha': datetime.now(UTC).isoformat(),
         'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
         'dry_run': dry_run,
+        'estado_identidad': resultado.get('estado_identidad', 'sin_identidad'),
     }

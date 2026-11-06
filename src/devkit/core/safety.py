@@ -277,94 +277,137 @@ def _ejecutar_accion(accion: dict) -> None:
     raise ErrorIntegridad(f'tipo no permitido {tipo}')
 
 
-def aplicar_manifiesto(
-    ruta_plan: Path | None = None,
-    herramienta: str = '',
-    espacio_trabajo: str = '',
-    autorizar=None,
-    dry_run: bool = False,
-    acciones: list[dict] | None = None,
-) -> dict:
-    # Ejecutor unico de manifiestos persistentes de toda la suite de herramientas.
-    if not dry_run:
-        verificar_escritura(f'aplicar {herramienta}')
-    plan = cargar_plan(ruta_plan) if ruta_plan is not None else None
-    if acciones is None:
-        if plan is None:
-            raise ErrorIntegridad('se requiere un plan o una lista de acciones')
-        acciones = [dict(accion) for accion in plan.get('acciones', [])]
-    else:
-        plan = {
-            'acciones': acciones,
-            'herramienta': herramienta,
-            'workspace_id': '',
-            'workspace_root': '',
-        }
-    acciones = [dict(a) for a in acciones]
-    # Valida el contrato del manifiesto antes de tocar el disco.
-    plan_herramienta = str(plan.get('herramienta', ''))
-    if ruta_plan is not None and plan_herramienta and plan_herramienta != herramienta:
-        raise ErrorIntegridad(
-            f'el manifiesto pertenece a {plan_herramienta}, no a {herramienta}'
-        )
-    base = Path(espacio_trabajo).expanduser().resolve() if espacio_trabajo else Path.cwd().resolve()
-    if not base.is_dir():
-        raise ErrorIntegridad(f'la raiz de trabajo no existe {base}')
-    if not dry_run:
-        workspace_activo = modulo_workspace.workspace_id(base)
-    else:
-        # En simulacion no se crea .devkit; se lee el id si ya existe.
-        archivo_workspace = base / '.devkit' / 'workspace'
-        if archivo_workspace.is_file():
-            try:
-                datos_ws = __import__('json').loads(archivo_workspace.read_text(encoding='utf-8'))
-                workspace_activo = str(datos_ws.get('workspace_id', ''))
-            except (OSError, ValueError):
-                workspace_activo = ''
-        else:
-            workspace_activo = ''
+def _validar_identidad(base, plan, dry_run):
     workspace_manifesto = str(plan.get('workspace_id', ''))
-    if (not dry_run) and workspace_manifesto and workspace_manifesto != workspace_activo:
-        raise ErrorIntegridad(
-            f'el manifiesto pertenece al workspace {workspace_manifesto}, '
-            f'no a {workspace_activo}'
-        )
+    workspace_activo = modulo_workspace.leer_id(base)
+    if workspace_activo is None:
+        estado_identidad = 'sin_identidad'
+    elif not workspace_manifesto:
+        estado_identidad = 'manifiesto_sin_identidad'
+    elif workspace_manifesto == workspace_activo:
+        estado_identidad = 'coincide'
+    else:
+        estado_identidad = 'distinta'
+    es_compartido = (
+        estado_identidad in ('coincide', 'sin_identidad')
+        and workspace_activo is not None
+        and modulo_workspace.es_compartido(base)
+    )
+    if es_compartido:
+        estado_identidad = 'compartido'
+    if not dry_run:
+        if estado_identidad == 'distinta':
+            raise ErrorIntegridad(
+                'el manifiesto pertenece al workspace '
+                + workspace_manifesto
+                + ', no a '
+                + str(workspace_activo)
+            )
+        if estado_identidad == 'manifiesto_sin_identidad':
+            raise ErrorIntegridad(
+                'el manifiesto no declara workspace_id; no se puede verificar su origen'
+            )
+        if estado_identidad == 'compartido':
+            raise ErrorIntegridad(
+                'el workspace '
+                + str(workspace_activo)
+                + ' se ha visto bajo otra raiz; usa --permitir-compartido para continuar'
+            )
+    return estado_identidad
+
+
+def _validar_acciones_comunes(acciones, base):
     for accion in acciones:
         for clave in ('origen', 'destino'):
             valor = accion.get(clave)
             if valor and not modulo_workspace.esta_contenida(base, Path(str(valor))):
                 raise ErrorIntegridad(
-                    f'la accion contiene una ruta fuera del workspace: {valor}'
+                    'la accion contiene una ruta fuera del workspace: ' + str(valor)
                 )
-    id_plan = ruta_plan.stem if ruta_plan is not None else 'simulado'
-    if dry_run:
-        # Simulacion: valida cada accion sin ejecutarla ni registrar en el journal.
-        movidos = []
-        fallidos = []
-        omitidos = []
-        for accion in acciones:
-            origen = str(accion.get('origen', ''))
-            destino = str(accion.get('destino', ''))
-            if autorizar is not None and not autorizar(accion):
-                omitidos.append(accion)
-                continue
-            detalle = _validar_accion(accion)
-            if detalle:
-                fallidos.append({'origen': origen, 'detalle': detalle})
-            else:
-                movidos.append(accion)
-        estado_plan = 'simulado'
-        return {
-            'id_ejecucion': '',
-            'id_plan': id_plan,
-            'estado_plan': estado_plan,
-            'movidos': movidos,
-            'fallidos': fallidos,
-            'omitidos': omitidos,
-            'total': len(acciones),
-            'codigo': 0 if not fallidos else 2,
-            'dry_run': True,
-        }
+    destinos = set()
+    for accion in acciones:
+        destino = str(accion.get('destino', ''))
+        if destino:
+            if destino in destinos:
+                raise ErrorIntegridad(
+                    'dos acciones comparten el mismo destino: ' + destino
+                )
+            destinos.add(destino)
+
+
+def _validar_identidad(base, plan, dry_run):
+    workspace_manifesto = str(plan.get('workspace_id', ''))
+    workspace_activo = modulo_workspace.leer_id(base)
+    if workspace_activo is None:
+        estado_identidad = 'sin_identidad'
+    elif not workspace_manifesto:
+        estado_identidad = 'manifiesto_sin_identidad'
+    elif workspace_manifesto == workspace_activo:
+        estado_identidad = 'coincide'
+    else:
+        estado_identidad = 'distinta'
+    es_compartido = (
+        estado_identidad in ('coincide', 'sin_identidad')
+        and workspace_activo is not None
+        and modulo_workspace.es_compartido(base)
+    )
+    if es_compartido:
+        estado_identidad = 'compartido'
+    if not dry_run:
+        if estado_identidad == 'distinta':
+            raise ErrorIntegridad(
+                'el manifiesto pertenece al workspace '
+                + workspace_manifesto
+                + ', no a '
+                + str(workspace_activo)
+            )
+        if estado_identidad == 'manifiesto_sin_identidad':
+            raise ErrorIntegridad(
+                'el manifiesto no declara workspace_id; no se puede verificar su origen'
+            )
+        if estado_identidad == 'compartido':
+            raise ErrorIntegridad(
+                'el workspace '
+                + str(workspace_activo)
+                + ' se ha visto bajo otra raiz; usa --permitir-compartido para continuar'
+            )
+    return estado_identidad
+
+
+def _validar_acciones_comunes(acciones, base):
+    for accion in acciones:
+        for clave in ('origen', 'destino'):
+            valor = accion.get(clave)
+            if valor and not modulo_workspace.esta_contenida(base, Path(str(valor))):
+                raise ErrorIntegridad(
+                    'la accion contiene una ruta fuera del workspace: ' + str(valor)
+                )
+    destinos = set()
+    for accion in acciones:
+        destino = str(accion.get('destino', ''))
+        if destino:
+            if destino in destinos:
+                raise ErrorIntegridad(
+                    'dos acciones comparten el mismo destino: ' + destino
+                )
+            destinos.add(destino)
+
+
+def aplicar_manifiesto(ruta_plan, herramienta, espacio_trabajo='', autorizar=None):
+    verificar_escritura('aplicar ' + herramienta)
+    plan = cargar_plan(ruta_plan)
+    acciones = [dict(accion) for accion in plan.get('acciones', [])]
+    plan_herramienta = str(plan.get('herramienta', ''))
+    if plan_herramienta and plan_herramienta != herramienta:
+        raise ErrorIntegridad(
+            'el manifiesto pertenece a ' + plan_herramienta + ', no a ' + herramienta
+        )
+    base = Path(espacio_trabajo).expanduser().resolve() if espacio_trabajo else Path.cwd().resolve()
+    if not base.is_dir():
+        raise ErrorIntegridad('la raiz de trabajo no existe ' + str(base))
+    _validar_identidad(base, plan, dry_run=False)
+    _validar_acciones_comunes(acciones, base)
+    id_plan = ruta_plan.stem
     id_ejec = runlog.iniciar_ejecucion(
         herramienta, 'aplicar', espacio_trabajo=espacio_trabajo, id_plan=id_plan
     )
@@ -377,30 +420,16 @@ def aplicar_manifiesto(
         if autorizar is not None and not autorizar(accion):
             omitidos.append(accion)
             runlog.registrar_hito(
-                id_ejec,
-                herramienta,
-                'accion',
-                'OMITIDO',
-                'sin autorizar',
-                origen=origen,
-                destino=destino,
-                espacio_trabajo=espacio_trabajo,
-                id_plan=id_plan,
-                nivel='accion',
+                id_ejec, herramienta, 'accion', 'OMITIDO', 'sin autorizar',
+                origen=origen, destino=destino,
+                espacio_trabajo=espacio_trabajo, id_plan=id_plan, nivel='accion',
             )
             continue
         detalle = _validar_accion(accion)
         runlog.registrar_hito(
-            id_ejec,
-            herramienta,
-            'accion',
-            'PENDING',
-            detalle or 'en curso',
-            origen=origen,
-            destino=destino,
-            espacio_trabajo=espacio_trabajo,
-            id_plan=id_plan,
-            nivel='accion',
+            id_ejec, herramienta, 'accion', 'PENDING', detalle or 'en curso',
+            origen=origen, destino=destino,
+            espacio_trabajo=espacio_trabajo, id_plan=id_plan, nivel='accion',
         )
         if detalle:
             fallidos.append({'origen': origen, 'detalle': detalle})
@@ -433,7 +462,6 @@ def aplicar_manifiesto(
     elif fallidos:
         estado_plan = 'fallido'
     else:
-        # Las acciones omitidas a proposito dejan el manifiesto en parcial.
         estado_plan = 'parcial'
     actualizar_estado_plan(ruta_plan, estado_plan)
     estado = 'COMPLETED' if not fallidos else 'FAILED'
@@ -450,6 +478,92 @@ def aplicar_manifiesto(
         'omitidos': omitidos,
         'total': len(acciones),
         'codigo': 0 if not fallidos else 2,
+    }
+
+
+def simular_manifiesto(ruta_plan, herramienta, espacio_trabajo='', autorizar=None):
+    plan = cargar_plan(ruta_plan)
+    acciones = [dict(accion) for accion in plan.get('acciones', [])]
+    plan_herramienta = str(plan.get('herramienta', ''))
+    if plan_herramienta and plan_herramienta != herramienta:
+        raise ErrorIntegridad(
+            'el manifiesto pertenece a ' + plan_herramienta + ', no a ' + herramienta
+        )
+    base = Path(espacio_trabajo).expanduser().resolve() if espacio_trabajo else Path.cwd().resolve()
+    if not base.is_dir():
+        raise ErrorIntegridad('la raiz de trabajo no existe ' + str(base))
+    estado_identidad = _validar_identidad(base, plan, dry_run=True)
+    _validar_acciones_comunes(acciones, base)
+    movidos = []
+    fallidos = []
+    omitidos = []
+    for accion in acciones:
+        origen = str(accion.get('origen', ''))
+        if autorizar is not None and not autorizar(accion):
+            omitidos.append(accion)
+            continue
+        detalle = _validar_accion(accion)
+        if detalle:
+            fallidos.append({'origen': origen, 'detalle': detalle})
+        else:
+            movidos.append(accion)
+    return {
+        'id_ejecucion': '',
+        'id_plan': ruta_plan.stem,
+        'estado_plan': 'simulado',
+        'movidos': movidos,
+        'fallidos': fallidos,
+        'omitidos': omitidos,
+        'total': len(acciones),
+        'codigo': 0 if not fallidos else 2,
+        'dry_run': True,
+        'estado_identidad': estado_identidad,
+    }
+
+
+def _simular_acciones(acciones, herramienta, base, autorizar=None):
+    movidos = []
+    fallidos = []
+    omitidos = []
+    destinos = set()
+    for accion in acciones:
+        origen = str(accion.get('origen', ''))
+        destino = str(accion.get('destino', ''))
+        if destino and destino in destinos:
+            fallidos.append({'origen': origen, 'detalle': 'destino duplicado: ' + destino})
+            continue
+        if destino:
+            destinos.add(destino)
+        fuera = False
+        for clave in ('origen', 'destino'):
+            valor = accion.get(clave)
+            if valor and not modulo_workspace.esta_contenida(base, Path(str(valor))):
+                fallidos.append(
+                    {'origen': origen, 'detalle': 'ruta fuera del workspace: ' + str(valor)}
+                )
+                fuera = True
+                break
+        if fuera:
+            continue
+        if autorizar is not None and not autorizar(accion):
+            omitidos.append(accion)
+            continue
+        detalle = _validar_accion(accion)
+        if detalle:
+            fallidos.append({'origen': origen, 'detalle': detalle})
+        else:
+            movidos.append(accion)
+    return {
+        'id_ejecucion': '',
+        'id_plan': 'simulado',
+        'estado_plan': 'simulado',
+        'movidos': movidos,
+        'fallidos': fallidos,
+        'omitidos': omitidos,
+        'total': len(acciones),
+        'codigo': 0 if not fallidos else 2,
+        'dry_run': True,
+        'estado_identidad': 'sin_identidad',
     }
 
 

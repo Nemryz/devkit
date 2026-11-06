@@ -4,8 +4,10 @@ build-backend = 'hatchling.build'
 
 [project]
 name = 'devkit'
-version = '0.1.0'
+version = '1.2.0'
 description = 'Herramientas internas de mantenimiento para Windows'
+license = 'Apache-2.0'
+license-files = ['LICENSE', 'NOTICE']
 requires-python = '>=3.12'
 dependencies = [
   'typer>=0.27',
@@ -17,14 +19,13 @@ dependencies = [
   'send2trash>=1.8',
   'pytesseract>=0.3',
   'pillow>=12.0',
-  'pymupdf>=1.28',
   'platformdirs>=4.0',
 ]
 
 [project.optional-dependencies]
 fs = ['send2trash>=1.8']
-docs = ['pymupdf>=1.28', 'python-docx>=1.2', 'ebooklib>=0.20', 'readability-lxml>=0.9']
-ocr = ['pytesseract>=0.3', 'pillow>=12.0']
+docs = ['python-docx>=1.2', 'readability-lxml>=0.9']
+ocr = ['pytesseract>=0.3', 'pillow>=12.0', 'pymupdf>=1.28']
 data = ['pandas>=2.3', 'pyarrow>=26.0']
 
 [project.scripts]

@@ -12,6 +12,13 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run pytest
+  licencias:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --locked
+      - run: uv run python scripts/auditar_licencias.py --nucleo
   paquete:
     runs-on: windows-latest
     steps:
@@ -21,3 +28,9 @@ jobs:
       - run: uv venv .venv-paquete
       - run: uv pip install --python .venv-paquete/Scripts/python.exe (Get-ChildItem dist/*.whl).FullName
       - run: .venv-paquete/Scripts/dev.exe --version
+      - name: Verificar version coincide con etiqueta
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          $tag = $env:GITHUB_REF -replace 'refs/tags/v', ''
+          $version = (Get-Content pyproject.toml | Select-String '^version').ToString().Split('=')[1].Trim().Trim('"')
+          if ($tag -ne $version) { throw "Etiqueta $tag != version $version" }

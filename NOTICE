@@ -1,0 +1,10 @@
+DevKit
+Copyright 2026 DevKit contributors
+
+This product includes software developed by third parties.
+See THIRD_PARTY.md for the license inventory of direct and optional dependencies.
+
+Optional dependency note:
+The 'ocr' extra may install PyMuPDF, which is available under the AGPL-3.0
+or a commercial license. See the ADR at docs/adr/0001-distribucion-y-licencias.md
+for the distribution decision and the planned replacement.

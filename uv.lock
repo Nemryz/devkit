@@ -327,7 +327,7 @@ wheels = [
 
 [[package]]
 name = "devkit"
-version = "0.1.0"
+version = "1.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "blake3" },
@@ -336,7 +336,6 @@ dependencies = [
     { name = "platformdirs" },
     { name = "psutil" },
     { name = "pydantic" },
-    { name = "pymupdf" },
     { name = "pytesseract" },
     { name = "rich" },
     { name = "send2trash" },
@@ -349,8 +348,6 @@ data = [
     { name = "pyarrow" },
 ]
 docs = [
-    { name = "ebooklib" },
-    { name = "pymupdf" },
     { name = "python-docx" },
     { name = "readability-lxml" },
 ]
@@ -359,6 +356,7 @@ fs = [
 ]
 ocr = [
     { name = "pillow" },
+    { name = "pymupdf" },
     { name = "pytesseract" },
 ]
 
@@ -373,7 +371,6 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "blake3", specifier = ">=1.0" },
-    { name = "ebooklib", marker = "extra == 'docs'", specifier = ">=0.20" },
     { name = "orjson", specifier = ">=3.11" },
     { name = "pandas", marker = "extra == 'data'", specifier = ">=2.3" },
     { name = "pillow", specifier = ">=12.0" },
@@ -382,8 +379,7 @@ requires-dist = [
     { name = "psutil", specifier = ">=6.0" },
     { name = "pyarrow", marker = "extra == 'data'", specifier = ">=26.0" },
     { name = "pydantic", specifier = ">=2.13" },
-    { name = "pymupdf", specifier = ">=1.28" },
-    { name = "pymupdf", marker = "extra == 'docs'", specifier = ">=1.28" },
+    { name = "pymupdf", marker = "extra == 'ocr'", specifier = ">=1.28" },
     { name = "pytesseract", specifier = ">=0.3" },
     { name = "pytesseract", marker = "extra == 'ocr'", specifier = ">=0.3" },
     { name = "python-docx", marker = "extra == 'docs'", specifier = ">=1.2" },
@@ -401,18 +397,6 @@ dev = [
     { name = "pytest", specifier = ">=9.0" },
     { name = "pytest-cov", specifier = ">=7.0" },
     { name = "ruff", specifier = ">=0.16" },
-]
-
-[[package]]
-name = "ebooklib"
-version = "0.21"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "lxml" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/fc/d8/a7ec6e06014057918bd58d1495af2e9c4e21cf14c93d10c625e905a8285d/ebooklib-0.21.tar.gz", hash = "sha256:fa815d544f722321c9fd31d8957473b2617027d3091431aa690d6dd93f785222", size = 148682, upload-time = "2026-11-01T14:08:59.06Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/15/72/5dde31a7b988f13ea158936e10bf82e7f6c1763201b325774ea93a0cf8ff/ebooklib-0.21-py3-none-any.whl", hash = "sha256:8cb417bed66567210661e6ef203f6310f394ad4a282f385a07320cbc09906c30", size = 52543, upload-time = "2026-11-01T14:08:57.524Z" },
 ]
 
 [[package]]

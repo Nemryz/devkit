@@ -214,6 +214,8 @@ def aplicar_trim(
     ruta_plan = Path(plan).expanduser().resolve() if plan is not None else None
     if ruta_plan is not None and not ruta_plan.is_file():
         raise ErrorLimpieza(f'no existe el plan {ruta_plan}')
+    if reanudar and ruta_plan is None:
+        raise ErrorLimpieza('reanudar exige un plan persistente con --plan')
     acciones = None
     if ruta_plan is None:
         if dry_run:
@@ -230,7 +232,9 @@ def aplicar_trim(
         else:
             resultado = safety.simular_manifiesto(ruta_plan, 'trim', espacio_trabajo=str(base))
     else:
-        resultado = safety.aplicar_manifiesto(ruta_plan, 'trim', espacio_trabajo=str(base))
+        resultado = safety.aplicar_manifiesto(
+            ruta_plan, 'trim', espacio_trabajo=str(base), reanudar=reanudar
+        )
     estado = 'simulado' if dry_run else ('correcto' if not resultado['fallidos'] else 'error')
     movidos = resultado['movidos']
     return {

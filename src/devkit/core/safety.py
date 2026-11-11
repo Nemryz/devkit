@@ -4,7 +4,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import random
 import shutil
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -227,13 +229,10 @@ TIPOS_PERMITIDOS = {'papelera', 'mover', 'crear_carpeta'}
 
 
 def mover_a_papelera_from_safety(ruta) -> None:
-    # Mantiene compatibilidad con el nombre antiguo del guardian.
+    # Mantiene el nombre antiguo y deja propagar el OSError con su winerror intacto.
     import send2trash
 
-    try:
-        send2trash.send2trash(str(ruta))
-    except OSError as fallo:
-        raise ErrorSoloLectura(f'no se pudo mover a papelera {ruta} porque {fallo}') from fallo
+    send2trash.send2trash(str(ruta))
 
 
 def ejecutar_plan(plan, accion_desc: str = 'ejecutar plan') -> dict:
@@ -338,8 +337,58 @@ def _validar_acciones_comunes(acciones, base):
             destinos.add(destino)
 
 
-def aplicar_manifiesto(ruta_plan, herramienta, espacio_trabajo='', autorizar=None):
+def _codigo_de_detalle(detalle: str) -> str:
+    # Traduce el mensaje de validacion a un codigo estable para el journal.
+    texto = detalle.lower()
+    if 'ya no existe' in texto:
+        return 'ORIGEN_DESAPARECIDO'
+    if 'cambio' in texto or 'modificado' in texto:
+        return 'CAMBIO_DURANTE_EJECUCION'
+    if 'destino ya existe' in texto:
+        return 'DESTINO_OCUPADO'
+    if 'fuera del workspace' in texto:
+        return 'RUTA_FUERA_DEL_WORKSPACE'
+    if 'enlace' in texto or 'junction' in texto:
+        return 'ORIGEN_ES_ENLACE'
+    if 'sin destino' in texto:
+        return 'DESTINO_FALTANTE'
+    return 'VALIDACION_FALLIDA'
+
+
+def _espera_reintento(intento: int) -> float:
+    # Espera 100, 300 o 900 ms con una variacion del 20 por ciento.
+    base = [0.1, 0.3, 0.9][min(intento, 2)]
+    return base * (1 + random.uniform(-0.2, 0.2))
+
+
+def _ejecutar_accion_con_reintento(accion: dict, al_reintentar=None, max_intentos: int = 3) -> int:
+    # Ejecuta una accion y reintenta solo los bloqueos transitorios de Windows.
+    intento = 1
+    while True:
+        try:
+            _ejecutar_accion(accion)
+            return intento
+        except OSError as fallo:
+            codigo = clasificar_error_windows(fallo)
+            if codigo == 'ARCHIVO_BLOQUEADO' and intento < max_intentos:
+                if al_reintentar is not None:
+                    al_reintentar(codigo, intento, fallo)
+                time.sleep(_espera_reintento(intento - 1))
+                intento += 1
+                continue
+            raise
+
+
+def aplicar_manifiesto(
+    ruta_plan,
+    herramienta,
+    espacio_trabajo='',
+    autorizar=None,
+    reanudar: bool = False,
+):
+    # Ejecutor unico de manifiestos persistentes de toda la suite de herramientas.
     verificar_escritura('aplicar ' + herramienta)
+    preflight_plan(ruta_plan, espacio_trabajo)
     plan = cargar_plan(ruta_plan)
     acciones = [dict(accion) for accion in plan.get('acciones', [])]
     plan_herramienta = str(plan.get('herramienta', ''))
@@ -353,56 +402,138 @@ def aplicar_manifiesto(ruta_plan, herramienta, espacio_trabajo='', autorizar=Non
     _validar_identidad(base, plan, dry_run=False)
     _validar_acciones_comunes(acciones, base)
     id_plan = ruta_plan.stem
+    reconciliacion = None
+    pendientes = None
+    if reanudar:
+        reconciliacion = reconciliar_plan(ruta_plan, espacio_trabajo)
+        if reconciliacion['ambiguas'] or reconciliacion['inconsistentes']:
+            raise ErrorIntegridad(
+                'RECONCILIACION_REQUIERE_INTERVENCION: '
+                + str(len(reconciliacion['ambiguas']))
+                + ' ambiguas y '
+                + str(len(reconciliacion['inconsistentes']))
+                + ' inconsistentes en '
+                + id_plan
+            )
+        pendientes = {
+            fila['indice']
+            for fila in reconciliacion['resultados']
+            if fila['estado'] == 'PENDIENTE'
+        }
+        if not pendientes:
+            return {
+                'id_ejecucion': '',
+                'id_plan': id_plan,
+                'estado_plan': 'reconciliado',
+                'movidos': [],
+                'fallidos': [],
+                'omitidos': [],
+                'total': len(acciones),
+                'codigo': 0,
+                'ya_resueltas': len(acciones),
+                'reconciliacion': reconciliacion,
+            }
+    indices = [i for i in range(len(acciones)) if pendientes is None or i in pendientes]
+    ya_resueltas = len(acciones) - len(indices)
     id_ejec = runlog.iniciar_ejecucion(
         herramienta, 'aplicar', espacio_trabajo=espacio_trabajo, id_plan=id_plan
     )
     movidos = []
     fallidos = []
     omitidos = []
-    for accion in acciones:
-        origen = str(accion.get('origen', ''))
-        destino = str(accion.get('destino', ''))
-        if autorizar is not None and not autorizar(accion):
-            omitidos.append(accion)
+
+    def anotar_reintento(codigo_error: str, intento: int, fallo: Exception) -> None:
+        # Deja constancia de cada reintento para que la ventana de bloqueo sea auditable.
+        runlog.registrar_hito(
+            id_ejec,
+            herramienta,
+            'accion',
+            'REINTENTO',
+            codigo_error + ': intento ' + str(intento) + ' ' + str(fallo),
+            origen=str(accion_actual.get('origen', '')),
+            destino=str(accion_actual.get('destino', '')),
+            codigo_error=codigo_error,
+            espacio_trabajo=espacio_trabajo,
+            id_plan=id_plan,
+            nivel='accion',
+        )
+
+    for posicion, indice in enumerate(indices):
+        accion_actual = acciones[indice]
+        origen = str(accion_actual.get('origen', ''))
+        destino = str(accion_actual.get('destino', ''))
+        if autorizar is not None and not autorizar(accion_actual):
+            omitidos.append(accion_actual)
             runlog.registrar_hito(
                 id_ejec, herramienta, 'accion', 'OMITIDO', 'sin autorizar',
                 origen=origen, destino=destino,
                 espacio_trabajo=espacio_trabajo, id_plan=id_plan, nivel='accion',
             )
             continue
-        detalle = _validar_accion(accion)
+        detalle = _validar_accion(accion_actual)
         runlog.registrar_hito(
             id_ejec, herramienta, 'accion', 'PENDING', detalle or 'en curso',
             origen=origen, destino=destino,
+            codigo_error=_codigo_de_detalle(detalle) if detalle else '',
             espacio_trabajo=espacio_trabajo, id_plan=id_plan, nivel='accion',
         )
         if detalle:
-            fallidos.append({'origen': origen, 'detalle': detalle})
+            codigo_error = _codigo_de_detalle(detalle)
+            fallidos.append(
+                {'origen': origen, 'detalle': detalle, 'codigo_error': codigo_error}
+            )
             runlog.registrar_hito(
                 id_ejec, herramienta, 'accion', 'FAILED', detalle,
-                origen=origen, destino=destino, codigo=2,
+                origen=origen, destino=destino, codigo=2, codigo_error=codigo_error,
                 espacio_trabajo=espacio_trabajo, id_plan=id_plan, nivel='accion',
             )
             continue
         try:
-            _ejecutar_accion(accion)
-            movidos.append(accion)
+            _ejecutar_accion_con_reintento(accion_actual, al_reintentar=anotar_reintento)
+            movidos.append(accion_actual)
             runlog.registrar_hito(
                 id_ejec, herramienta, 'accion', 'COMPLETED', 'aplicada',
                 origen=origen, destino=destino, codigo=0,
                 espacio_trabajo=espacio_trabajo, id_plan=id_plan, nivel='accion',
             )
         except Exception as fallo:  # noqa: BLE001
+            codigo_error = clasificar_error_windows(fallo)
             texto = str(fallo)
-            fallidos.append({'origen': origen, 'detalle': texto})
+            if codigo_error == 'ERROR_DESCONOCIDO':
+                detalle_final = texto
+            else:
+                detalle_final = codigo_error + ': ' + texto
+            fallidos.append(
+                {'origen': origen, 'detalle': detalle_final, 'codigo_error': codigo_error}
+            )
             runlog.registrar_hito(
-                id_ejec, herramienta, 'accion', 'FAILED', texto,
-                origen=origen, destino=destino, codigo=2,
+                id_ejec, herramienta, 'accion', 'FAILED', detalle_final,
+                origen=origen, destino=destino, codigo=2, codigo_error=codigo_error,
                 espacio_trabajo=espacio_trabajo, id_plan=id_plan, nivel='accion',
             )
-    if not fallidos and not omitidos and len(movidos) == len(acciones):
+            if codigo_error == 'DISCO_LLENO':
+                # Un disco lleno invalida el resto del lote; no se acumulan fallos identicos.
+                for restante in indices[posicion + 1:]:
+                    accion_restante = acciones[restante]
+                    omitidos.append(accion_restante)
+                    runlog.registrar_hito(
+                        id_ejec, herramienta, 'accion', 'OMITIDO',
+                        'lote abortado por DISCO_LLENO',
+                        origen=str(accion_restante.get('origen', '')),
+                        destino=str(accion_restante.get('destino', '')),
+                        codigo_error='DISCO_LLENO',
+                        espacio_trabajo=espacio_trabajo, id_plan=id_plan, nivel='accion',
+                    )
+                break
+    omitidas_historicas = len(reconciliacion['omitidas']) if reconciliacion else 0
+    if (
+        not fallidos
+        and not omitidos
+        and omitidas_historicas == 0
+        and len(movidos) + ya_resueltas == len(acciones)
+    ):
         estado_plan = 'aplicado'
-    elif movidos:
+    elif movidos or ya_resueltas:
         estado_plan = 'parcial'
     elif fallidos:
         estado_plan = 'fallido'
@@ -423,6 +554,8 @@ def aplicar_manifiesto(ruta_plan, herramienta, espacio_trabajo='', autorizar=Non
         'omitidos': omitidos,
         'total': len(acciones),
         'codigo': 0 if not fallidos else 2,
+        'ya_resueltas': ya_resueltas,
+        'reconciliacion': reconciliacion,
     }
 
 
@@ -611,66 +744,88 @@ def clasificar_error_windows(fallo: Exception) -> str:
     return 'ERROR_DESCONOCIDO'
 
 
-# Ejecutar accion con reintentos para errores transitorios.
-def _ejecutar_accion_con_reintento(accion: dict, max_intentos: int = 3):
-    import time as _time
-    intentos = 0
-    while True:
+def _postcondicion(accion: dict) -> str:
+    # Deduce el estado de una accion comparando el manifiesto con el sistema de archivos.
+    origen = Path(str(accion.get('origen', '')))
+    destino_texto = str(accion.get('destino', ''))
+    destino = Path(destino_texto) if destino_texto else None
+    tipo = str(accion.get('tipo', 'papelera'))
+    if tipo == 'crear_carpeta':
+        if origen.is_dir():
+            return 'COMPLETADA'
+        return 'INCONSISTENTE' if origen.exists() else 'PENDIENTE'
+    if tipo == 'papelera':
+        return 'COMPLETADA' if not origen.exists() else 'PENDIENTE'
+    if destino is None:
+        return 'PENDIENTE' if origen.exists() else 'INCONSISTENTE'
+    existe_origen = origen.exists()
+    existe_destino = destino.exists()
+    if existe_origen and not existe_destino:
+        return 'PENDIENTE'
+    if existe_origen and existe_destino:
+        return 'AMBIGUA'
+    if not existe_origen and not existe_destino:
+        return 'INCONSISTENTE'
+    # Queda el caso de destino presente y origen ausente: hay que probar el contenido.
+    esperado = accion.get('hash')
+    if esperado:
         try:
-            _ejecutar_accion(accion)
-            return
-        except OSError as fallo:
-            codigo = clasificar_error_windows(fallo)
-            if codigo == 'ARCHIVO_BLOQUEADO' and intentos < max_intentos - 1:
-                espera = [0.1, 0.3, 0.9][intentos]
-                _time.sleep(espera)
-                intentos += 1
-                continue
-            raise
+            if not destino.is_file():
+                return 'AMBIGUA'
+            return 'COMPLETADA' if hash_contenido(destino) == str(esperado) else 'AMBIGUA'
+        except OSError:
+            return 'AMBIGUA'
+    tamano = accion.get('tamano')
+    if tamano is not None:
+        try:
+            if destino.is_file() and destino.stat().st_size == int(tamano):
+                return 'COMPLETADA'
+            return 'AMBIGUA'
+        except OSError:
+            return 'AMBIGUA'
+    return 'COMPLETADA'
 
 
-# Reconciliacion de un plan interrumpido.
 def reconciliar_plan(ruta_plan: Path, espacio_trabajo: str = '') -> dict:
+    # Reconstruye el estado de cada accion desde sus postcondiciones y los hitos del journal.
     plan = cargar_plan(ruta_plan)
     acciones = [dict(a) for a in plan.get('acciones', [])]
+    historial = runlog.hitos_del_plan(ruta_plan.stem)
+    omitidas = {
+        (str(h.get('origen', '')), str(h.get('destino', '')))
+        for h in historial
+        if h.get('estado') == 'OMITIDO'
+    }
+    completadas = {
+        (str(h.get('origen', '')), str(h.get('destino', '')))
+        for h in historial
+        if h.get('estado') == 'COMPLETED'
+    }
     resultados = []
-    for accion in acciones:
-        origen = Path(str(accion.get('origen', '')))
-        destino = Path(str(accion.get('destino', '')))
-        tipo = str(accion.get('tipo', 'mover'))
-        hash_esperado = accion.get('hash')
-        tamano_esperado = accion.get('tamano')
-        # Verificar postcondicion.
-        origen_existe = origen.exists()
-        destino_existe = destino.exists() if str(destino) else False
-        if not origen_existe and destino_existe:
-            # Posiblemente completada: verificar hash.
-            if hash_esperado and destino.is_file():
-                try:
-                    if hash_contenido(destino) == hash_esperado:
-                        estado = 'COMPLETADA'
-                    else:
-                        estado = 'INCONSISTENTE'
-                except OSError:
-                    estado = 'INCONSISTENTE'
-            elif tamano_esperado is not None and destino.is_file():
-                if destino.stat().st_size == tamano_esperado:
-                    estado = 'COMPLETADA'
-                else:
-                    estado = 'INCONSISTENTE'
-            else:
-                estado = 'COMPLETADA'
-        elif origen_existe and not destino_existe:
-            estado = 'PENDIENTE'
-        elif origen_existe and destino_existe:
-            estado = 'AMBIGUA'
+    for indice, accion in enumerate(acciones):
+        clave = (str(accion.get('origen', '')), str(accion.get('destino', '')))
+        if clave in omitidas:
+            estado = 'OMITIDA'
+            motivo = 'hito OMITIDO en el journal'
         else:
-            estado = 'INCONSISTENTE'
+            estado = _postcondicion(accion)
+            motivo = ''
+            if estado != 'COMPLETADA' and clave in completadas:
+                estado = 'INCONSISTENTE'
+                motivo = 'el journal la marca COMPLETED pero la postcondicion no se cumple'
+            elif estado == 'AMBIGUA':
+                motivo = 'origen y destino presentes, o contenido distinto'
+            elif estado == 'PENDIENTE':
+                motivo = 'origen presente y destino ausente'
+            elif estado == 'INCONSISTENTE':
+                motivo = 'origen y destino ausentes'
         resultados.append({
-            'origen': str(origen),
-            'destino': str(destino),
-            'tipo': tipo,
+            'indice': indice,
+            'tipo': str(accion.get('tipo', 'papelera')),
+            'origen': clave[0],
+            'destino': clave[1],
             'estado': estado,
+            'motivo': motivo,
         })
     return {
         'id_plan': ruta_plan.stem,
@@ -680,5 +835,5 @@ def reconciliar_plan(ruta_plan: Path, espacio_trabajo: str = '') -> dict:
         'ambiguas': [r for r in resultados if r['estado'] == 'AMBIGUA'],
         'inconsistentes': [r for r in resultados if r['estado'] == 'INCONSISTENTE'],
         'completadas': [r for r in resultados if r['estado'] == 'COMPLETADA'],
+        'omitidas': [r for r in resultados if r['estado'] == 'OMITIDA'],
     }
-

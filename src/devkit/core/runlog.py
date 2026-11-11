@@ -74,6 +74,7 @@ def registrar_hito(
     origen: str = '',
     destino: str = '',
     codigo: int | None = None,
+    codigo_error: str = '',
     espacio_trabajo: str = '',
     id_plan: str = '',
     nivel: str = 'ejecucion',
@@ -89,6 +90,7 @@ def registrar_hito(
         'origen': origen,
         'destino': destino,
         'codigo': codigo,
+        'codigo_error': codigo_error,
         'espacio_trabajo': espacio_heredado(espacio_trabajo),
         'id_plan': id_plan,
         'pid': os.getpid(),
@@ -222,6 +224,25 @@ def ultima_accion_del_id(id_ejecucion: str) -> dict | None:
             if datos.get('id_ejecucion') == id_ejecucion and datos.get('nivel') == 'accion':
                 ultima = datos
     return ultima
+
+
+def hitos_del_plan(id_plan: str) -> list[dict]:
+    # Devuelve todos los hitos de accion registrados para un plan concreto.
+    ruta = paths.ruta_journal()
+    if not ruta.exists() or not id_plan:
+        return []
+    hitos: list[dict] = []
+    with ruta.open('r', encoding='utf-8', errors='replace') as archivo:
+        for linea in archivo:
+            if not linea.strip():
+                continue
+            try:
+                datos = json.loads(linea)
+            except json.JSONDecodeError:
+                continue
+            if datos.get('nivel') == 'accion' and datos.get('id_plan') == id_plan:
+                hitos.append(datos)
+    return hitos
 
 
 def recuperar_interrumpidas() -> list[str]:

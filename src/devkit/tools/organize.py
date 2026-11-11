@@ -322,6 +322,8 @@ def aplicar_organize(
     ruta_plan = Path(plan_persistente).expanduser().resolve() if plan_persistente else None
     if ruta_plan is not None and not ruta_plan.is_file():
         raise ErrorOrganizar(f'no existe el plan {ruta_plan}')
+    if reanudar and ruta_plan is None:
+        raise ErrorOrganizar('reanudar exige un plan persistente con --plan')
     acciones = None
     if ruta_plan is None and dry_run:
         archivos = recolectar_archivos(base, ignorar_onedrive, edad_dias)
@@ -341,7 +343,8 @@ def aplicar_organize(
             )
     else:
         resultado = safety.aplicar_manifiesto(
-            ruta_plan, 'organize', espacio_trabajo=str(base), autorizar=autorizar
+            ruta_plan, 'organize', espacio_trabajo=str(base),
+            autorizar=autorizar, reanudar=reanudar,
         )
     movidos = resultado['movidos']
     fallidos = resultado['fallidos']

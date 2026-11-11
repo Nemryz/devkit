@@ -4,7 +4,7 @@ El paquete se divide en un nucleo compartido y una carpeta de herramientas. El n
 
 ## Nucleo
 
-El modulo paths resuelve las raices del sistema, la deteccion de OneDrive y las rutas extendidas. El modulo safety concentra el modo de solo lectura, el objeto de plan y la verificacion previa a cualquier escritura. El modulo safety es ademas el guardian centralizado: ejecutar_plan es el unico sitio autorizado para mover a papelera o renombrar. El modulo runlog escribe hitos transaccionales PENDING, RUNNING, COMPLETED, FAILED e INTERRUPTED con id de ejecucion, origen, destino y codigo. El modulo output decide entre JSON y tabla. El modulo proceso lanza hijos con prioridad reducida y Job Object. El modulo sistema encapsula las lecturas del sistema operativo. El modulo markdown parsea frontmatter y revisa enlaces para idea e index.
+El modulo paths resuelve las raices del sistema, la deteccion de OneDrive y las rutas extendidas. El modulo safety concentra el modo de solo lectura, el objeto de plan y la verificacion previa a cualquier escritura. El modulo safety es ademas el guardian centralizado: ejecutar_plan es el unico sitio autorizado para mover a papelera o renombrar. El modulo politica deriva del catalogo una politica inmutable por capacidad, accion y compuertas. El modulo runlog escribe hitos transaccionales PENDING, RUNNING, COMPLETED, FAILED e INTERRUPTED con id de ejecucion, origen, destino, codigo y la politica aplicada. El modulo output decide entre JSON y tabla. El modulo proceso lanza hijos con prioridad reducida y Job Object. El modulo sistema encapsula las lecturas del sistema operativo. El modulo markdown parsea frontmatter y revisa enlaces para idea e index.
 
 ## Herramientas
 
@@ -16,7 +16,7 @@ El estado vive en la carpeta local del perfil del usuario. El journal es la fuen
 
 ## Flujo de una operacion destructiva
 
-La herramienta construye un plan con las acciones previstas. Si el modo de solo lectura esta activo, la operacion se rechaza con codigo cuatro. Si el plan se aprueba, se firma con SHA-256, se guarda el manifiesto y cada accion se registra en el journal antes de ejecutarse. Un fallo a mitad deja el estado marcado como inconsistente y permite revertir lo aplicado. La validacion del arbol comprueba que cada archivo sigue existiendo con mismo tamano, mtime y contenido antes de moverlo.
+La herramienta construye un plan con las acciones previstas. Si el modo de solo lectura esta activo, la operacion se rechaza con codigo cuatro. Si el plan se aprueba, se firma con SHA-256, se guarda el manifiesto y cada accion se registra en el journal antes de ejecutarse. El ejecutor exige una politica explicita, rechaza acciones fuera de los tipos declarados y anota en cada hito la huella, la decision y los flags que autorizaron el cambio. Un fallo a mitad deja el estado marcado como inconsistente y exige intervencion manual, porque no existe rollback automatico. La validacion del arbol comprueba que cada archivo sigue existiendo con mismo tamano, mtime y contenido antes de moverlo.
 
 ## Salud sin falsos ok
 

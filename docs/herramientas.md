@@ -10,11 +10,11 @@ Genera un archivo cifrado con manifiesto SHA-256 y prueba de restauracion obliga
 
 ## trim
 
-Limpia caches y artefactos con plan previo, papelera de Windows y journal transaccional. Excluye .git, src y tests. Respeta DEVKIT_READONLY. El plan incluye manifiesto firmado para aplicar sin reescanear el arbol y valida tamano, fecha y destino antes de mover.
+Limpia caches y artefactos con plan previo, papelera de Windows y journal transaccional. Excluye .git, src y tests. Respeta DEVKIT_READONLY. El plan incluye manifiesto firmado para aplicar sin reescanear el arbol y valida tamano, fecha y destino antes de mover. Aplicar exige `--forzar` como anulacion de seguridad y la politica derivada solo permite acciones de papelera.
 
 ## dedupe
 
-Agrupa por tamaño, confirma con BLAKE3 (prehash parcial y completo) y mueve los duplicados a la papelera. Conserva la ruta mas corta y el mas antiguo. Incluye resumen por extension y filtro de OneDrive.
+Agrupa por tamaño, confirma con BLAKE3 (prehash parcial y completo) y mueve los duplicados a la papelera. Conserva la ruta mas corta y el mas antiguo. Incluye resumen por extension y filtro de OneDrive. Aplicar exige `--forzar` y la politica derivada solo permite acciones de papelera.
 
 ## health
 
@@ -26,7 +26,7 @@ Envuelve un proceso hijo con prioridad en bajo (BELOW_NORMAL_PRIORITY_CLASS) y t
 
 ## organize
 
-Clasifica por extension, firma binaria y año, con confirmacion archivo por archivo o --todos. Resuelve colisiones con _2, _3. El manifiesto firmado cubre origen, destino, tamano y fecha, y se puede aplicar sin reescanear con --plan.
+Clasifica por extension, firma binaria y año, con confirmacion archivo por archivo o --todos. `--todos` elige y `--si` confirma la aplicacion; ninguna sustituye a la otra. Resuelve colisiones con _2, _3. El manifiesto firmado cubre origen, destino, tamano y fecha, y se puede aplicar sin reescanear con --plan.
 
 ## idea
 

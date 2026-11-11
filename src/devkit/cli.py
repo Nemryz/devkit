@@ -491,13 +491,11 @@ def comando_trim_aplicar(
     ),
     formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
 ) -> None:
-    # Solo mueve a papelera cuando el usuario acepta con --forzar.
-    if not forzar:
-        typer.echo('sin --forzar no se aplica el plan, usa trim escanear', err=True)
-        raise typer.Exit(code=2)
+    # La politica del ejecutor exige --forzar antes de tocar la papelera.
     try:
         resultado = modulo_trim.aplicar_trim(
-            raiz, incluir_venv, edad_dias, plan, dry_run=dry_run, reanudar=reanudar
+            raiz, incluir_venv, edad_dias, plan, dry_run=dry_run, reanudar=reanudar,
+            forzar=forzar,
         )
     except ErrorBase as fallo:
         salir_con_error('trim aplicar', fallo, formato)
@@ -553,14 +551,12 @@ def comando_dedupe_aplicar(
     ),
     formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
 ) -> None:
-    # Solo mueve a papelera cuando el usuario acepta con --forzar.
-    if not forzar:
-        typer.echo('sin --forzar no se aplica el plan, usa dedupe escanear', err=True)
-        raise typer.Exit(code=2)
+    # La politica del ejecutor exige --forzar antes de tocar la papelera.
     try:
         ignorar = not no_ignorar_onedrive
         resultado = modulo_dedupe.aplicar_dedupe(
-            raiz, edad_dias, ignorar, plan=plan, dry_run=dry_run, reanudar=reanudar
+            raiz, edad_dias, ignorar, plan=plan, dry_run=dry_run, reanudar=reanudar,
+            forzar=forzar,
         )
     except ErrorBase as fallo:
         salir_con_error('dedupe aplicar', fallo, formato)
@@ -600,7 +596,10 @@ def comando_organize_aplicar(
         None, '--destino', '-d', help='Carpeta Organizados.'
     ),
     todos: bool = typer.Option(
-        False, '--todos', '-t', '--si', '-s', help='Mueve todos sin confirmar uno a uno.'
+        False, '--todos', '-t', help='Selecciona todos los archivos sin confirmar uno a uno.'
+    ),
+    si: bool = typer.Option(
+        False, '--si', '-s', help='Confirma la aplicacion del plan.'
     ),
     por_archivo: bool = typer.Option(
         False,
@@ -625,14 +624,15 @@ def comando_organize_aplicar(
     ),
     formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
 ) -> None:
-    # Solo mueve cuando el usuario acepta con --todos o confirma archivo por archivo.
+    # La seleccion no sustituye a la confirmacion: la politica exige --si.
     if not todos and not por_archivo:
         typer.echo('sin --todos ni --por-archivo no se aplica el plan', err=True)
         raise typer.Exit(code=2)
     try:
         ignorar = not no_ignorar_onedrive
         resultado = modulo_organize.aplicar_organize(
-            raiz, destino, 0, ignorar, todos, por_archivo, plan, dry_run=dry_run, reanudar=reanudar
+            raiz, destino, 0, ignorar, todos, por_archivo, plan, dry_run=dry_run,
+            reanudar=reanudar, confirmar=si,
         )
     except ErrorBase as fallo:
         salir_con_error('organize aplicar', fallo, formato)

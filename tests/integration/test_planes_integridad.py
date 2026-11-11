@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from devkit.core import safety, workspace
+from devkit.core import politica, safety, workspace
 from devkit.errors import ErrorIntegridad, ErrorSoloLectura
 
 
@@ -21,11 +21,15 @@ def test_plan_detecta_cambio_de_tamano(tmp_path):
             'mtime': origen.stat().st_mtime,
         }
     ]
-    ruta_plan = safety.guardar_plan('x-1', 'plan', manifiesto, destino_dir=tmp_path / 'planes')
+    ruta_plan = safety.guardar_plan('x-1', 'organize', manifiesto, destino_dir=tmp_path / 'planes')
     origen.write_text('original-plus', encoding='utf-8')
     fallos = safety._validar_arbol({'acciones': manifiesto})
     assert fallos and 'cambio de tamano' in fallos[0]['detalle']
-    resultado = safety.aplicar_plan_persistente(ruta_plan, espacio_trabajo=str(tmp_path))
+    resultado = safety.aplicar_plan_persistente(
+        ruta_plan,
+        espacio_trabajo=str(tmp_path),
+        politica=politica.derivar('organize', 'aplicar', confirmada=True),
+    )
     assert resultado['total'] == 0
     assert 'cambio de tamano' in resultado['fallos'][0]['detalle']
     assert origen.read_text(encoding='utf-8') == 'original-plus'
@@ -153,7 +157,10 @@ def test_manifiesto_de_otra_herramienta_se_rechaza(tmp_path):
         'x-tool', 'trim', manifiesto, workspace_id=wid, workspace_root=str(raiz)
     )
     with pytest.raises(ErrorIntegridad):
-        safety.aplicar_manifiesto(ruta_plan, 'dedupe', espacio_trabajo=str(raiz))
+        safety.aplicar_manifiesto(
+            ruta_plan, 'dedupe', espacio_trabajo=str(raiz),
+            politica=politica.derivar('dedupe', 'aplicar', forzada=True),
+        )
 
 
 def test_manifiesto_de_otro_workspace_se_rechaza(tmp_path):
@@ -169,10 +176,13 @@ def test_manifiesto_de_otro_workspace_se_rechaza(tmp_path):
     ]
     wid_a = workspace.workspace_id(raiz_a)
     ruta_plan = safety.guardar_plan(
-        'x-ws', 'plan', manifiesto, workspace_id=wid_a, workspace_root=str(raiz_a)
+        'x-ws', 'organize', manifiesto, workspace_id=wid_a, workspace_root=str(raiz_a)
     )
     with pytest.raises(ErrorIntegridad):
-        safety.aplicar_manifiesto(ruta_plan, 'plan', espacio_trabajo=str(raiz_b))
+        safety.aplicar_manifiesto(
+            ruta_plan, 'organize', espacio_trabajo=str(raiz_b),
+            politica=politica.derivar('organize', 'aplicar', confirmada=True),
+        )
 
 
 def test_accion_fuera_del_workspace_se_rechaza(tmp_path):
@@ -186,10 +196,13 @@ def test_accion_fuera_del_workspace_se_rechaza(tmp_path):
     ]
     wid = workspace.workspace_id(raiz)
     ruta_plan = safety.guardar_plan(
-        'x-out', 'plan', manifiesto, workspace_id=wid, workspace_root=str(raiz)
+        'x-out', 'organize', manifiesto, workspace_id=wid, workspace_root=str(raiz)
     )
     with pytest.raises(ErrorIntegridad):
-        safety.aplicar_manifiesto(ruta_plan, 'plan', espacio_trabajo=str(raiz))
+        safety.aplicar_manifiesto(
+            ruta_plan, 'organize', espacio_trabajo=str(raiz),
+            politica=politica.derivar('organize', 'aplicar', confirmada=True),
+        )
 
 
 def test_identificador_de_workspace_corrupto_falla(tmp_path):
@@ -245,10 +258,14 @@ def test_estado_del_plan_evoluciona_sin_romper_la_firma(tmp_path):
             'mtime': origen.stat().st_mtime,
         }
     ]
-    ruta_plan = safety.guardar_plan('x-3', 'plan', manifiesto, destino_dir=tmp_path / 'planes')
+    ruta_plan = safety.guardar_plan('x-3', 'organize', manifiesto, destino_dir=tmp_path / 'planes')
     datos = json.loads(ruta_plan.read_text(encoding='utf-8'))
     assert datos['estado'] == 'pendiente'
-    resultado = safety.aplicar_plan_persistente(ruta_plan, espacio_trabajo=str(tmp_path))
+    resultado = safety.aplicar_plan_persistente(
+        ruta_plan,
+        espacio_trabajo=str(tmp_path),
+        politica=politica.derivar('organize', 'aplicar', confirmada=True),
+    )
     assert resultado['total'] == 1
     datos = json.loads(ruta_plan.read_text(encoding='utf-8'))
     assert datos['estado'] == 'aplicado'

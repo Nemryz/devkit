@@ -7,7 +7,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from devkit.cli import app
-from devkit.core import runlog, safety
+from devkit.core import politica, runlog, safety
 from devkit.tools import dedupe, organize, trim
 
 EJECUTOR = CliRunner()
@@ -41,7 +41,7 @@ def test_trim_aplica_el_manifiesto_guardado_sin_reescanear(tmp_path):
     assert escaneo['total'] >= 1
     tardio = crear_cache(raiz, 'htmlcov')
     ruta_plan = Path(escaneo['plan_persistente'])
-    resultado = trim.aplicar_trim(raiz, edad_dias=7, plan=ruta_plan)
+    resultado = trim.aplicar_trim(raiz, edad_dias=7, plan=ruta_plan, forzar=True)
     assert resultado['estado'] == 'correcto'
     assert resultado['total_movidos'] == escaneo['total']
     assert tardio.exists()
@@ -78,7 +78,7 @@ def test_dedupe_aplica_el_manifiesto_guardado_sin_reescanear(tmp_path):
     assert escaneo['total'] == 1
     tardio = crear_archivo(raiz / 'c/tres.jpg', b'img' * 100)
     ruta_plan = Path(escaneo['plan_persistente'])
-    resultado = dedupe.aplicar_dedupe(raiz, edad_dias=30, plan=ruta_plan)
+    resultado = dedupe.aplicar_dedupe(raiz, edad_dias=30, plan=ruta_plan, forzar=True)
     assert resultado['estado'] == 'correcto'
     assert resultado['total_movidos'] == 1
     assert tardio.exists()
@@ -119,7 +119,7 @@ def test_fallo_en_una_accion_deja_el_estado_parcial(tmp_path, monkeypatch):
         movimientos.append(str(ruta))
 
     monkeypatch.setattr(safety, 'mover_a_papelera_from_safety', mediador)
-    resultado = trim.aplicar_trim(raiz, edad_dias=7)
+    resultado = trim.aplicar_trim(raiz, edad_dias=7, forzar=True)
     assert resultado['estado'] == 'error'
     assert resultado['total_movidos'] == 1
     assert len(resultado['fallidos']) == 1
@@ -140,7 +140,8 @@ def test_gancho_de_autorizacion_omite_acciones_y_deja_parcial(tmp_path):
     escaneo = organize.escanear_organize(raiz)
     ruta_plan = Path(escaneo['plan_persistente'])
     resultado = safety.aplicar_manifiesto(
-        ruta_plan, 'organize', espacio_trabajo=str(raiz), autorizar=lambda accion: False
+        ruta_plan, 'organize', espacio_trabajo=str(raiz), autorizar=lambda accion: False,
+        politica=politica.derivar('organize', 'aplicar', confirmada=True),
     )
     assert resultado['estado_plan'] == 'parcial'
     assert resultado['movidos'] == []
@@ -176,7 +177,10 @@ def test_reanudacion_tras_interrupcion_termina_el_resto(estado_temporal, tmp_pat
     assert corte['estado'] == 'INTERRUPTED'
     assert corte['id_plan'] == ruta_plan.stem
     assert 'ultima accion' in corte['detalle']
-    resultado = safety.aplicar_manifiesto(ruta_plan, 'trim', espacio_trabajo=str(raiz))
+    resultado = safety.aplicar_manifiesto(
+        ruta_plan, 'trim', espacio_trabajo=str(raiz),
+        politica=politica.derivar('trim', 'aplicar', forzada=True),
+    )
     assert resultado['estado_plan'] == 'aplicado'
     assert runlog.ejecuciones_abiertas() == []
 
@@ -186,7 +190,7 @@ def test_aplicar_deja_un_solo_id_por_ejecucion_y_cero_pendientes(estado_temporal
     raiz = tmp_path / 'proyecto'
     raiz.mkdir()
     crear_cache(raiz, '__pycache__')
-    resultado = trim.aplicar_trim(raiz, edad_dias=7)
+    resultado = trim.aplicar_trim(raiz, edad_dias=7, forzar=True)
     assert resultado['estado'] == 'correcto'
     lineas = [
         json.loads(linea)

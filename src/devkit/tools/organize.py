@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from devkit.core import paths, runlog, safety
+from devkit.core import politica as modulo_politica
 from devkit.core import workspace as modulo_workspace
 from devkit.errors import ErrorOrganizar
 
@@ -305,6 +306,7 @@ def aplicar_organize(
     plan_persistente: Path | None = None,
     dry_run: bool = False,
     reanudar: bool = False,
+    confirmar: bool = False,
 ) -> dict:
     # Aplica (o simula) un manifiesto por el ejecutor unico, sin reescanear si ya existe.
     if not dry_run:
@@ -324,6 +326,14 @@ def aplicar_organize(
         raise ErrorOrganizar(f'no existe el plan {ruta_plan}')
     if reanudar and ruta_plan is None:
         raise ErrorOrganizar('reanudar exige un plan persistente con --plan')
+    seleccion = tuple(
+        nombre
+        for nombre, activo in (('todos', todos), ('por-archivo', por_archivo))
+        if activo
+    )
+    permiso = modulo_politica.derivar(
+        'organize', 'aplicar', confirmada=confirmar, flags=seleccion
+    )
     acciones = None
     if ruta_plan is None and dry_run:
         archivos = recolectar_archivos(base, ignorar_onedrive, edad_dias)
@@ -336,15 +346,18 @@ def aplicar_organize(
     autorizar = None if (todos or dry_run) else _autorizar_por_archivo(False)
     if dry_run:
         if acciones is not None:
-            resultado = safety._simular_acciones(acciones, 'organize', base, autorizar=autorizar)
+            resultado = safety._simular_acciones(
+                acciones, 'organize', base, autorizar=autorizar, politica=permiso
+            )
         else:
             resultado = safety.simular_manifiesto(
-                ruta_plan, 'organize', espacio_trabajo=str(base), autorizar=autorizar
+                ruta_plan, 'organize', espacio_trabajo=str(base),
+                autorizar=autorizar, politica=permiso,
             )
     else:
         resultado = safety.aplicar_manifiesto(
             ruta_plan, 'organize', espacio_trabajo=str(base),
-            autorizar=autorizar, reanudar=reanudar,
+            autorizar=autorizar, reanudar=reanudar, politica=permiso,
         )
     movidos = resultado['movidos']
     fallidos = resultado['fallidos']

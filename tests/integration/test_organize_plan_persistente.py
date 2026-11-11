@@ -40,7 +40,7 @@ def test_aplicar_con_plan_persistente_no_reescanea(tmp_path):
     # Se añade una nota nueva despues del plan, no debe entrar en la aplicacion.
     (origen / 'nota.md').write_text('tarde', encoding='utf-8')
     salida = EJECUTOR.invoke(
-        app, ['organize', 'aplicar', str(origen), '--todos', '--plan', ruta_plan],
+        app, ['organize', 'aplicar', str(origen), '--todos', '--si', '--plan', ruta_plan],
         env=_entorno(tmp_path),
     )
     assert salida.exit_code == 0
@@ -62,7 +62,7 @@ def test_aplicar_aborta_si_el_arbol_cambio(tmp_path):
     ruta_plan = json.loads(plan_salida.stdout)['plan_persistente']
     fichero.write_bytes(b'ID3\x03\x00' + b'z' * 60)
     salida = EJECUTOR.invoke(
-        app, ['organize', 'aplicar', str(origen), '--todos', '--plan', ruta_plan],
+        app, ['organize', 'aplicar', str(origen), '--todos', '--si', '--plan', ruta_plan],
         env=_entorno(tmp_path),
     )
     assert salida.exit_code == 2
@@ -85,7 +85,7 @@ def test_aplicar_no_pisa_un_destino_ocupado(tmp_path):
     destino.parent.mkdir(parents=True)
     destino.write_bytes(b'\xff\xd8\xff\x00' + b'w' * 40)
     salida = EJECUTOR.invoke(
-        app, ['organize', 'aplicar', str(origen), '--todos', '--plan', ruta_plan],
+        app, ['organize', 'aplicar', str(origen), '--todos', '--si', '--plan', ruta_plan],
         env=_entorno(tmp_path),
     )
     assert salida.exit_code == 2

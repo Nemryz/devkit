@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from devkit.core import paths, runlog, safety
+from devkit.core import politica as modulo_politica
 from devkit.core import workspace as modulo_workspace
 from devkit.errors import ErrorDuplicados
 
@@ -287,6 +288,7 @@ def aplicar_dedupe(
     plan: Path | None = None,
     dry_run: bool = False,
     reanudar: bool = False,
+    forzar: bool = False,
 ) -> dict:
     # Aplica (o simula) un manifiesto por el ejecutor unico, sin reescanear si ya existe.
     if not dry_run:
@@ -298,6 +300,7 @@ def aplicar_dedupe(
         raise ErrorDuplicados(f'no existe el plan {ruta_plan}')
     if reanudar and ruta_plan is None:
         raise ErrorDuplicados('reanudar exige un plan persistente con --plan')
+    permiso = modulo_politica.derivar('dedupe', 'aplicar', forzada=forzar)
     acciones = None
     if ruta_plan is None and dry_run:
         archivos = recolectar_archivos(base, ignorar_onedrive, edad_dias)
@@ -309,12 +312,17 @@ def aplicar_dedupe(
         ruta_plan = Path(escaneo['plan_persistente'])
     if dry_run:
         if acciones is not None:
-            resultado = safety._simular_acciones(acciones, 'dedupe', base, autorizar=None)
+            resultado = safety._simular_acciones(
+                acciones, 'dedupe', base, autorizar=None, politica=permiso
+            )
         else:
-            resultado = safety.simular_manifiesto(ruta_plan, 'dedupe', espacio_trabajo=str(base))
+            resultado = safety.simular_manifiesto(
+                ruta_plan, 'dedupe', espacio_trabajo=str(base), politica=permiso
+            )
     else:
         resultado = safety.aplicar_manifiesto(
-            ruta_plan, 'dedupe', espacio_trabajo=str(base), reanudar=reanudar
+            ruta_plan, 'dedupe', espacio_trabajo=str(base), reanudar=reanudar,
+            politica=permiso,
         )
     movidos = resultado['movidos']
     estado = 'simulado' if dry_run else ('correcto' if not resultado['fallidos'] else 'error')

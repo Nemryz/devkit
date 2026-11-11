@@ -66,7 +66,7 @@ def test_aplicar_mueve_duplicado(estado_temporal, tmp_path, monkeypatch):
     monkeypatch.setattr(
         safety, 'mover_a_papelera_from_safety', lambda ruta: movimientos.append(str(ruta))
     )
-    resultado = dedupe.aplicar_dedupe(raiz, edad_dias=30)
+    resultado = dedupe.aplicar_dedupe(raiz, edad_dias=30, forzar=True)
     assert resultado['estado'] == 'correcto'
     assert resultado['total_movidos'] == 1
     assert (raiz / 'src' / 'copiar.jpg').exists()
@@ -78,7 +78,7 @@ def test_aplicar_bloqueado_en_solo_lectura(estado_temporal, tmp_path, monkeypatc
     raiz = crear_arbol(tmp_path / 'proyecto')
     monkeypatch.setenv('DEVKIT_READONLY', '1')
     with pytest.raises(ErrorSoloLectura):
-        dedupe.aplicar_dedupe(raiz, edad_dias=30)
+        dedupe.aplicar_dedupe(raiz, edad_dias=30, forzar=True)
 
 
 def test_escanear_rechaza_raiz_invalida(tmp_path):
@@ -103,7 +103,7 @@ def test_aplicar_aborta_si_arbol_cambia(estado_temporal, tmp_path, monkeypatch):
     monkeypatch.setattr(
         safety, 'mover_a_papelera_from_safety', lambda ruta: movimientos.append(str(ruta))
     )
-    resultado = dedupe.aplicar_dedupe(raiz, edad_dias=30)
+    resultado = dedupe.aplicar_dedupe(raiz, edad_dias=30, forzar=True)
     assert resultado['estado'] == 'error'
     assert len(resultado['fallidos']) >= 1
     assert movimientos == []
@@ -118,6 +118,6 @@ def test_aplicar_registra_fallidos_sin_abortar(estado_temporal, tmp_path, monkey
         raise ErrorLimpieza('bloqueado por prueba')
 
     monkeypatch.setattr(safety, 'mover_a_papelera_from_safety', mover)
-    resultado = dedupe.aplicar_dedupe(raiz, edad_dias=30)
+    resultado = dedupe.aplicar_dedupe(raiz, edad_dias=30, forzar=True)
     assert resultado['estado'] == 'error'
     assert len(resultado['fallidos']) == 1

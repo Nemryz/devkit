@@ -78,6 +78,7 @@ def registrar_hito(
     espacio_trabajo: str = '',
     id_plan: str = '',
     nivel: str = 'ejecucion',
+    politica: dict | None = None,
 ) -> Path:
     # Escribe una linea JSON con el estado de una accion concreta.
     registro = {
@@ -95,6 +96,7 @@ def registrar_hito(
         'id_plan': id_plan,
         'pid': os.getpid(),
         'nivel': nivel,
+        'politica': politica or {},
     }
     _agregar(ruta_journal(), registro)
     return ruta_journal()
@@ -105,6 +107,7 @@ def iniciar_ejecucion(
     accion: str,
     espacio_trabajo: str = '',
     id_plan: str = '',
+    politica: dict | None = None,
 ) -> str:
     # Crea un id unico y escribe el hito PENDING de la ejecucion.
     id_ejecucion = f'{herramienta}-{uuid.uuid4().hex[:8]}'
@@ -116,6 +119,7 @@ def iniciar_ejecucion(
         'inicio',
         espacio_trabajo=espacio_trabajo,
         id_plan=id_plan,
+        politica=politica,
     )
     return id_ejecucion
 
@@ -129,6 +133,7 @@ def cerrar_ejecucion(
     detalle: str = '',
     espacio_trabajo: str = '',
     id_plan: str = '',
+    politica: dict | None = None,
 ) -> Path:
     # Cierra con RUNNING, COMPLETED, FAILED o INTERRUPTED.
     return registrar_hito(
@@ -140,6 +145,7 @@ def cerrar_ejecucion(
         codigo=codigo,
         espacio_trabajo=espacio_trabajo,
         id_plan=id_plan,
+        politica=politica,
     )
 
 
@@ -153,6 +159,7 @@ def registrar_ejecucion(
     espacio_trabajo: str = '',
     id_plan: str = '',
     id_ejecucion: str = '',
+    politica: dict | None = None,
 ) -> Path:
     # Cierra con el id ya iniciado o abre y cierra su propia ejecucion coherente.
     ident = id_ejecucion or iniciar_ejecucion(
@@ -160,6 +167,7 @@ def registrar_ejecucion(
         argumentos[0] if argumentos else 'ejecutar',
         espacio_trabajo=espacio_trabajo,
         id_plan=id_plan,
+        politica=politica,
     )
     estado = 'COMPLETED' if codigo == 0 else 'FAILED'
     registro = {
@@ -175,6 +183,7 @@ def registrar_ejecucion(
         'espacio_trabajo': espacio_heredado(espacio_trabajo),
         'id_plan': id_plan,
         'pid': os.getpid(),
+        'politica': politica or {},
     }
     _agregar(ruta_journal(), registro)
     return ruta_journal()

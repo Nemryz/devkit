@@ -27,6 +27,10 @@ class ErrorSoloLectura(ErrorBase):
     codigo = 4
 
 
+class ErrorPolitica(ErrorBase):
+    pass
+
+
 class ErrorRespaldo(ErrorBase):
     pass
 

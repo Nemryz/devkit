@@ -68,7 +68,7 @@ def test_aplicar_mueve_a_papelera(estado_temporal, tmp_path, monkeypatch):
     monkeypatch.setattr(
         safety, 'mover_a_papelera_from_safety', lambda ruta: movimientos.append(str(ruta))
     )
-    resultado = trim.aplicar_trim(raiz, edad_dias=7)
+    resultado = trim.aplicar_trim(raiz, edad_dias=7, forzar=True)
     assert resultado['estado'] == 'correcto'
     assert resultado['total_movidos'] >= 2
     assert len(movimientos) == resultado['total_movidos']
@@ -79,7 +79,7 @@ def test_aplicar_bloqueado_en_solo_lectura(estado_temporal, tmp_path, monkeypatc
     raiz = crear_arbol(tmp_path / 'proyecto')
     monkeypatch.setenv('DEVKIT_READONLY', '1')
     with pytest.raises(ErrorSoloLectura):
-        trim.aplicar_trim(raiz, edad_dias=7)
+        trim.aplicar_trim(raiz, edad_dias=7, forzar=True)
 
 
 def test_escanear_rechaza_raiz_invalida(tmp_path):
@@ -97,7 +97,7 @@ def test_aplicar_registra_fallidos_sin_abortar(estado_temporal, tmp_path, monkey
 
     movimientos = []
     monkeypatch.setattr(safety, 'mover_a_papelera_from_safety', fallar_some)
-    resultado = trim.aplicar_trim(raiz, edad_dias=7)
+    resultado = trim.aplicar_trim(raiz, edad_dias=7, forzar=True)
     assert resultado['estado'] == 'error'
     assert len(resultado['fallidos']) >= 1
     assert resultado['total_movidos'] >= 1

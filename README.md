@@ -130,21 +130,21 @@ Agrupa por tamaño, calcula prehash parcial (primeros 8 KB) y hash completo con 
 
 ### organize
 
-Clasificación por extensión, firma binaria y año, con confirmación archivo por archivo.
+Clasificación por extensión, firma binaria y año, con confirmación archivo por archivo o `--todos`, y la compuerta `--si` que confirma la aplicación.
 
 ```powershell
 dev organize plan C:\Descargas
-dev organize aplicar --todos C:\Descargas
-dev organize aplicar --por-archivo C:\Descargas
+dev organize aplicar --todos --si C:\Descargas
+dev organize aplicar --por-archivo --si C:\Descargas
 ```
 
-Detecta el tipo real por magic number (JPEG, PNG, PDF, ZIP, MP3, MP4, etc.) y cae a la extensión si no hay firma. Organiza en `Organizados/<año>/<tipo>/<nombre>`. Resuelve colisiones con `_2`, `_3`. El plan incluye manifiesto firmado con origen, destino, tamaño y mtime.
+Detecta el tipo real por magic number (JPEG, PNG, PDF, ZIP, MP3, MP4, etc.) y cae a la extensión si no hay firma. Organiza en `Organizados/<año>/<tipo>/<nombre>`. Resuelve colisiones con `_2`, `_3`. El plan incluye manifiesto firmado con origen, destino, tamaño y mtime. `--todos` elige los archivos y `--si` confirma; ninguna de las dos sustituye a la otra.
 
 Para aplicar un manifiesto ya guardado sin reescanear el árbol:
 
 ```powershell
 dev organize plan C:\Descargas
-dev organize aplicar --todos C:\Descargas --plan <ruta-del-manifiesto>.json
+dev organize aplicar --todos --si C:\Descargas --plan <ruta-del-manifiesto>.json
 ```
 
 ### idea
@@ -282,10 +282,10 @@ La carpeta de descargas tiene archivos de varios tipos y años mezclados.
 ```powershell
 dev organize plan C:\Descargas
 dev organize plan C:\Descargas --formato tabla
-dev organize aplicar --todos C:\Descargas
+dev organize aplicar --todos --si C:\Descargas
 ```
 
-Organize detecta el tipo real por magic number (no solo extensión), propone `Organizados/<año>/<tipo>/<nombre>` y resuelve colisiones. El plan se muestra antes de mover. Sin `--todos` ni `--por-archivo` no se aplica nada.
+Organize detecta el tipo real por magic number (no solo extensión), propone `Organizados/<año>/<tipo>/<nombre>` y resuelve colisiones. El plan se muestra antes de mover. Sin `--todos` ni `--por-archivo` no hay selección; sin `--si` no se confirma la aplicación.
 
 ### Escenario 3: respaldo antes de reinstalar
 
@@ -409,7 +409,7 @@ Casos de uso: liberar espacio en discos llenos, limpiar carpetas de fotos duplic
 
 Flujo interno: recorre sin seguir enlaces, detecta tipo por magic number y extensión, calcula año por mtime, propone ruta Organizados/<año>/<tipo>/<nombre>, resuelve colisiones, construye plan, ejecuta moviendo.
 
-Seguridad: excluye .git, src, tests. No sigue enlaces. Respeta DEVKIT_READONLY. El plan se firma con SHA-256 sobre origen, destino, tamaño, mtime y contenido. `plan` guarda el manifiesto persistente y `aplicar --plan` lo consume sin reescanear; sin plan previo, generar, guardar, validar y aplicar es un solo flujo. Valida cada movimiento contra destino ocupado y no sobrescribe nada. Sin --todos ni --por-archivo no se aplica nada. Sin tty, --por-archivo aborta. Pasa por el guardián centralizado.
+Seguridad: excluye .git, src, tests. No sigue enlaces. Respeta DEVKIT_READONLY. El plan se firma con SHA-256 sobre origen, destino, tamaño, mtime y contenido. `plan` guarda el manifiesto persistente y `aplicar --plan` lo consume sin reescanear; sin plan previo, generar, guardar, validar y aplicar es un solo flujo. Valida cada movimiento contra destino ocupado y no sobrescribe nada. Sin `--todos` ni `--por-archivo` no hay selección; sin `--si` no se confirma la aplicación. Sin tty, `--por-archivo` aborta. Pasa por el guardián centralizado, que exige la política derivada del catálogo y solo permite movimientos.
 
 Casos de uso: organizar descargas, clasificar por año y tipo, preparar archivos para archivo.
 
@@ -461,6 +461,7 @@ El núcleo concentra lo que comparten todas las herramientas y no contiene lógi
 |--------|-----------------|
 | paths.py | Rutas del sistema, detección de OneDrive, rutas extendidas, perfiles de almacenamiento, platformdirs |
 | safety.py | Modo solo lectura, guardián centralizado, planes persistentes firmados con SHA-256 |
+| politica.py | Política inmutable derivada del catálogo, compuertas `--si` y `--forzar`, huella por ejecución |
 | runlog.py | Journal transaccional (PENDING, RUNNING, COMPLETED, FAILED, INTERRUPTED) con espacio de trabajo, id de plan y recuperación de ejecuciones interrumpidas |
 | output.py | JSON y tabla legible |
 | proceso.py | Procesos con prioridad baja y Job Object |
@@ -471,7 +472,7 @@ El núcleo concentra lo que comparten todas las herramientas y no contiene lógi
 
 ## Reglas del proyecto
 
-El código, los comentarios y los mensajes visibles están en español. Los identificadores no usan palabras reservadas del lenguaje. La salida por defecto es JSON. Toda escritura pasa por el módulo de seguridad y respeta la variable DEVKIT_READONLY.
+El código, los comentarios y los mensajes visibles están en español. Los identificadores no usan palabras reservadas del lenguaje. La salida por defecto es JSON. Toda escritura pasa por el módulo de seguridad y respeta la variable DEVKIT_READONLY. Las operaciones destructivas exigen la política derivada del catálogo: `--forzar` anula una restricción de seguridad y `--si` confirma la aplicación, sin que una sustituya a la otra.
 
 Las rutas del estado se resuelven por capas: variable de entorno, config.toml en su sección storage, perfil activo y raíces del sistema. El perfil custom exige `state` en config.toml y un config.toml dañado o con tipos inválidos falla con error explícito, nunca con un fallback silencioso al perfil global.
 

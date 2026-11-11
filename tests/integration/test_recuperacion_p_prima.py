@@ -6,22 +6,29 @@ import pytest
 from typer.testing import CliRunner
 
 from devkit.cli import app
-from devkit.core import runlog, safety, workspace
+from devkit.core import politica, runlog, safety, workspace
 from devkit.errors import ErrorIntegridad
 
 EJECUTOR = CliRunner()
+POLITICA_TRIM = politica.derivar('trim', 'aplicar', forzada=True)
+POLITICA_ORGANIZE = politica.derivar('organize', 'aplicar', confirmada=True)
 
 
 def _entorno(tmp_path: Path) -> dict:
     return {'DEVKIT_ESTADO': str(tmp_path / 'estado')}
 
 
-def _manifiesto(base: Path, acciones: list[dict], identificador: str = 'plan-trim') -> Path:
+def _manifiesto(
+    base: Path,
+    acciones: list[dict],
+    identificador: str = 'plan-organize',
+    herramienta: str = 'organize',
+) -> Path:
     # Guarda un manifiesto firmado y ligado al workspace de la raiz.
     ident = workspace.workspace_id(base)
     return safety.guardar_plan(
         identificador,
-        'trim',
+        herramienta,
         acciones,
         destino_dir=base / 'planes',
         workspace_id=ident,
@@ -69,7 +76,10 @@ def test_reintenta_bloqueo_transitorio(tmp_path, monkeypatch):
 
     monkeypatch.setattr(safety, '_ejecutar_accion', falla_dos_veces)
     monkeypatch.setattr(safety, '_espera_reintento', lambda intento: 0)
-    resultado = safety.aplicar_manifiesto(ruta_plan, 'trim', espacio_trabajo=str(base))
+    resultado = safety.aplicar_manifiesto(
+        ruta_plan, 'organize', espacio_trabajo=str(base),
+        politica=POLITICA_ORGANIZE,
+    )
     assert resultado['codigo'] == 0
     assert destino.exists()
     assert not origen.exists()
@@ -88,7 +98,10 @@ def test_reintento_agotado_falla_sin_mover(tmp_path, monkeypatch):
 
     monkeypatch.setattr(safety, '_ejecutar_accion', siempre_bloqueado)
     monkeypatch.setattr(safety, '_espera_reintento', lambda intento: 0)
-    resultado = safety.aplicar_manifiesto(ruta_plan, 'trim', espacio_trabajo=str(base))
+    resultado = safety.aplicar_manifiesto(
+        ruta_plan, 'organize', espacio_trabajo=str(base),
+        politica=POLITICA_ORGANIZE,
+    )
     assert resultado['codigo'] == 2
     assert origen.exists()
     assert not destino.exists()
@@ -112,7 +125,10 @@ def test_permiso_denegado_continua_con_la_siguiente(tmp_path, monkeypatch):
         return original(accion_actual)
 
     monkeypatch.setattr(safety, '_ejecutar_accion', deniega_la_primera)
-    resultado = safety.aplicar_manifiesto(ruta_plan, 'trim', espacio_trabajo=str(base))
+    resultado = safety.aplicar_manifiesto(
+        ruta_plan, 'organize', espacio_trabajo=str(base),
+        politica=POLITICA_ORGANIZE,
+    )
     assert resultado['codigo'] == 2
     assert resultado['estado_plan'] == 'parcial'
     assert origen_uno.exists() and not destino_uno.exists()
@@ -133,7 +149,10 @@ def test_disco_lleno_aborta_el_lote(tmp_path, monkeypatch):
         raise _fallo_windows(112, 'no queda espacio')
 
     monkeypatch.setattr(safety, '_ejecutar_accion', disco_lleno)
-    resultado = safety.aplicar_manifiesto(ruta_plan, 'trim', espacio_trabajo=str(base))
+    resultado = safety.aplicar_manifiesto(
+        ruta_plan, 'organize', espacio_trabajo=str(base),
+        politica=POLITICA_ORGANIZE,
+    )
     assert resultado['codigo'] == 2
     assert len(llamadas) == 1
     assert origen_uno.exists() and origen_dos.exists()
@@ -149,7 +168,10 @@ def test_preflight_aborta_antes_de_mover(tmp_path):
     accion['tamano'] = 10**18
     ruta_plan = _manifiesto(base, [accion])
     with pytest.raises(ErrorIntegridad) as error:
-        safety.aplicar_manifiesto(ruta_plan, 'trim', espacio_trabajo=str(base))
+        safety.aplicar_manifiesto(
+            ruta_plan, 'organize', espacio_trabajo=str(base),
+            politica=POLITICA_ORGANIZE,
+        )
     assert 'DISCO_LLENO' in str(error.value)
     assert origen.exists()
     assert not destino.exists()
@@ -318,7 +340,8 @@ def test_reanudar_rechaza_ambiguas(tmp_path):
     ruta_plan = _manifiesto(base, [accion])
     with pytest.raises(ErrorIntegridad) as error:
         safety.aplicar_manifiesto(
-            ruta_plan, 'trim', espacio_trabajo=str(base), reanudar=True
+            ruta_plan, 'organize', espacio_trabajo=str(base), reanudar=True,
+            politica=POLITICA_ORGANIZE,
         )
     assert 'RECONCILIACION_REQUIERE_INTERVENCION' in str(error.value)
     assert origen.exists()
@@ -343,7 +366,8 @@ def test_reanudar_ejecuta_solo_pendientes(tmp_path):
     ]
     ruta_plan = _manifiesto(base, acciones)
     resultado = safety.aplicar_manifiesto(
-        ruta_plan, 'trim', espacio_trabajo=str(base), reanudar=True
+        ruta_plan, 'organize', espacio_trabajo=str(base), reanudar=True,
+        politica=POLITICA_ORGANIZE,
     )
     assert resultado['codigo'] == 0
     assert resultado['ya_resueltas'] == 1
@@ -360,7 +384,8 @@ def test_reanudar_sin_pendientes_no_abre_ejecucion(tmp_path):
     origen.replace(destino)
     ruta_plan = _manifiesto(base, [accion])
     resultado = safety.aplicar_manifiesto(
-        ruta_plan, 'trim', espacio_trabajo=str(base), reanudar=True
+        ruta_plan, 'organize', espacio_trabajo=str(base), reanudar=True,
+        politica=POLITICA_ORGANIZE,
     )
     assert resultado['codigo'] == 0
     assert resultado['estado_plan'] == 'reconciliado'
@@ -400,7 +425,7 @@ def test_reanudar_ambiguo_falla_en_el_cli(tmp_path):
         app,
         [
             'organize', 'aplicar', str(origen),
-            '--todos', '--plan', ruta_plan, '--reanudar',
+            '--todos', '--si', '--plan', ruta_plan, '--reanudar',
         ],
         env=_entorno(tmp_path),
     )
@@ -416,7 +441,10 @@ def test_papelera_reintenta_si_el_sistema_bloquea(tmp_path, monkeypatch):
     base = tmp_path
     origen = base / 'basura.txt'
     origen.write_text('contenido', encoding='utf-8')
-    ruta_plan = _manifiesto(base, [{'tipo': 'papelera', 'origen': str(origen)}])
+    ruta_plan = _manifiesto(
+        base, [{'tipo': 'papelera', 'origen': str(origen)}],
+        'plan-trim', herramienta='trim',
+    )
     intentos = {'n': 0}
 
     def bloquea_la_primera(ruta):
@@ -427,7 +455,10 @@ def test_papelera_reintenta_si_el_sistema_bloquea(tmp_path, monkeypatch):
 
     monkeypatch.setattr(safety, 'mover_a_papelera_from_safety', bloquea_la_primera)
     monkeypatch.setattr(safety, '_espera_reintento', lambda intento: 0)
-    resultado = safety.aplicar_manifiesto(ruta_plan, 'trim', espacio_trabajo=str(base))
+    resultado = safety.aplicar_manifiesto(
+        ruta_plan, 'trim', espacio_trabajo=str(base),
+        politica=POLITICA_TRIM,
+    )
     assert resultado['codigo'] == 0
     assert intentos['n'] == 2
     assert not origen.exists()
@@ -441,13 +472,19 @@ def test_papelera_denegada_se_clasifica_como_permiso(tmp_path, monkeypatch):
     base = tmp_path
     origen = base / 'basura.txt'
     origen.write_text('contenido', encoding='utf-8')
-    ruta_plan = _manifiesto(base, [{'tipo': 'papelera', 'origen': str(origen)}])
+    ruta_plan = _manifiesto(
+        base, [{'tipo': 'papelera', 'origen': str(origen)}],
+        'plan-trim', herramienta='trim',
+    )
 
     def deniega(ruta):
         raise _fallo_windows(5, 'acceso denegado')
 
     monkeypatch.setattr(safety, 'mover_a_papelera_from_safety', deniega)
-    resultado = safety.aplicar_manifiesto(ruta_plan, 'trim', espacio_trabajo=str(base))
+    resultado = safety.aplicar_manifiesto(
+        ruta_plan, 'trim', espacio_trabajo=str(base),
+        politica=POLITICA_TRIM,
+    )
     assert resultado['codigo'] == 2
     assert resultado['fallidos'][0]['codigo_error'] == 'PERMISO_DENEGADO'
     assert origen.exists()

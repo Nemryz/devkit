@@ -64,8 +64,8 @@ CAPACIDADES: list[dict[str, Any]] = [
         'read_permissions': ['filesystem:read'],
         'write_permissions': ['filesystem:write', 'trash:move'],
         'actions': {
-            'escanear': {'params': {'raiz': 'Path', 'incluir_venv': 'bool', 'edad_dias': 'int'}, 'outputs': {'estado': 'str', 'codigo': 'int', 'raiz': 'str', 'total': 'int', 'plan_persistente': 'str'}},
-            'aplicar': {'params': {'raiz': 'Path', 'incluir_venv': 'bool', 'edad_dias': 'int', 'forzar': 'bool', 'plan': 'Path?', 'dry_run': 'bool'}, 'outputs': {'estado': 'str', 'codigo': 'int', 'raiz': 'str', 'total_movidos': 'int', 'total_bytes': 'int', 'movidos': 'list', 'fallidos': 'list', 'plan_persistente': 'str'}},
+            'escanear': {'params': {'raiz': 'Path', 'incluir_venv': 'bool', 'edad_dias': 'int'}, 'outputs': {'estado': 'str', 'codigo': 'int', 'raiz': 'str', 'total': 'int', 'plan_persistente': 'str'}, 'compuertas': {}, 'tipos': []},
+            'aplicar': {'params': {'raiz': 'Path', 'incluir_venv': 'bool', 'edad_dias': 'int', 'forzar': 'bool', 'plan': 'Path?', 'dry_run': 'bool'}, 'outputs': {'estado': 'str', 'codigo': 'int', 'raiz': 'str', 'total_movidos': 'int', 'total_bytes': 'int', 'movidos': 'list', 'fallidos': 'list', 'plan_persistente': 'str'}, 'compuertas': {'anulacion': True}, 'tipos': ['papelera']},
         },
         'outputs': {'estado': 'str', 'codigo': 'int', 'raiz': 'str', 'total_movidos': 'int', 'total_bytes': 'int', 'movidos': 'list', 'fallidos': 'list', 'plan_persistente': 'str'},
         'accion': 'limpieza de caches y artefactos con plan previo y papelera de Windows',
@@ -84,8 +84,8 @@ CAPACIDADES: list[dict[str, Any]] = [
         'read_permissions': ['filesystem:read'],
         'write_permissions': ['filesystem:write', 'trash:move'],
         'actions': {
-            'escanear': {'params': {'raiz': 'Path', 'edad_dias': 'int', 'no_ignorar_onedrive': 'bool'}, 'outputs': {'estado': 'str', 'codigo': 'int', 'raiz': 'str', 'total': 'int', 'plan_persistente': 'str'}},
-            'aplicar': {'params': {'raiz': 'Path', 'edad_dias': 'int', 'no_ignorar_onedrive': 'bool', 'forzar': 'bool', 'plan': 'Path?', 'dry_run': 'bool'}, 'outputs': {'estado': 'str', 'codigo': 'int', 'raiz': 'str', 'total_movidos': 'int', 'total_bytes': 'int', 'movidos': 'list', 'fallidos': 'list', 'plan_persistente': 'str'}},
+            'escanear': {'params': {'raiz': 'Path', 'edad_dias': 'int', 'no_ignorar_onedrive': 'bool'}, 'outputs': {'estado': 'str', 'codigo': 'int', 'raiz': 'str', 'total': 'int', 'plan_persistente': 'str'}, 'compuertas': {}, 'tipos': []},
+            'aplicar': {'params': {'raiz': 'Path', 'edad_dias': 'int', 'no_ignorar_onedrive': 'bool', 'forzar': 'bool', 'plan': 'Path?', 'dry_run': 'bool'}, 'outputs': {'estado': 'str', 'codigo': 'int', 'raiz': 'str', 'total_movidos': 'int', 'total_bytes': 'int', 'movidos': 'list', 'fallidos': 'list', 'plan_persistente': 'str'}, 'compuertas': {'anulacion': True}, 'tipos': ['papelera']},
         },
         'outputs': {'estado': 'str', 'codigo': 'int', 'raiz': 'str', 'total_movidos': 'int', 'total_bytes': 'int', 'movidos': 'list', 'fallidos': 'list', 'plan_persistente': 'str'},
         'accion': 'deteccion de duplicados exactos con BLAKE3, plan previo y papelera de Windows',
@@ -104,8 +104,8 @@ CAPACIDADES: list[dict[str, Any]] = [
         'read_permissions': ['filesystem:read'],
         'write_permissions': ['filesystem:write'],
         'actions': {
-            'plan': {'params': {'raiz': 'Path', 'destino': 'Path?', 'no_ignorar_onedrive': 'bool'}, 'outputs': {'estado': 'str', 'codigo': 'int', 'raiz': 'str', 'destino': 'str', 'total': 'int', 'plan_persistente': 'str'}},
-            'aplicar': {'params': {'raiz': 'Path', 'destino': 'Path?', 'todos': 'bool', 'por_archivo': 'bool', 'no_ignorar_onedrive': 'bool', 'plan': 'Path?', 'dry_run': 'bool'}, 'outputs': {'estado': 'str', 'codigo': 'int', 'raiz': 'str', 'destino': 'str', 'total_movidos': 'int', 'total_bytes': 'int', 'movidos': 'list', 'fallidos': 'list', 'plan_persistente': 'str'}},
+            'plan': {'params': {'raiz': 'Path', 'destino': 'Path?', 'no_ignorar_onedrive': 'bool'}, 'outputs': {'estado': 'str', 'codigo': 'int', 'raiz': 'str', 'destino': 'str', 'total': 'int', 'plan_persistente': 'str'}, 'compuertas': {}, 'tipos': []},
+            'aplicar': {'params': {'raiz': 'Path', 'destino': 'Path?', 'todos': 'bool', 'por_archivo': 'bool', 'no_ignorar_onedrive': 'bool', 'plan': 'Path?', 'dry_run': 'bool'}, 'outputs': {'estado': 'str', 'codigo': 'int', 'raiz': 'str', 'destino': 'str', 'total_movidos': 'int', 'total_bytes': 'int', 'movidos': 'list', 'fallidos': 'list', 'plan_persistente': 'str'}, 'compuertas': {'confirmacion': True}, 'tipos': ['mover']},
         },
         'outputs': {'estado': 'str', 'codigo': 'int', 'raiz': 'str', 'destino': 'str', 'total_movidos': 'int', 'total_bytes': 'int', 'movidos': 'list', 'fallidos': 'list', 'plan_persistente': 'str'},
         'accion': 'clasificacion por extension, firma binaria y año con plan previo',

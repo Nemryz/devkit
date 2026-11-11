@@ -7,6 +7,7 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 
+from devkit.core import politica as modulo_politica
 from devkit.core import runlog, safety
 from devkit.core import workspace as modulo_workspace
 from devkit.errors import ErrorLimpieza
@@ -205,6 +206,7 @@ def aplicar_trim(
     plan: Path | None = None,
     dry_run: bool = False,
     reanudar: bool = False,
+    forzar: bool = False,
 ) -> dict:
     # Aplica un manifiesto por el ejecutor unico, sin reescanear si ya existe.
     if not dry_run:
@@ -216,6 +218,7 @@ def aplicar_trim(
         raise ErrorLimpieza(f'no existe el plan {ruta_plan}')
     if reanudar and ruta_plan is None:
         raise ErrorLimpieza('reanudar exige un plan persistente con --plan')
+    permiso = modulo_politica.derivar('trim', 'aplicar', forzada=forzar)
     acciones = None
     if ruta_plan is None:
         if dry_run:
@@ -228,12 +231,17 @@ def aplicar_trim(
             acciones = None
     if dry_run:
         if acciones is not None:
-            resultado = safety._simular_acciones(acciones, 'trim', base, autorizar=None)
+            resultado = safety._simular_acciones(
+                acciones, 'trim', base, autorizar=None, politica=permiso
+            )
         else:
-            resultado = safety.simular_manifiesto(ruta_plan, 'trim', espacio_trabajo=str(base))
+            resultado = safety.simular_manifiesto(
+                ruta_plan, 'trim', espacio_trabajo=str(base), politica=permiso
+            )
     else:
         resultado = safety.aplicar_manifiesto(
-            ruta_plan, 'trim', espacio_trabajo=str(base), reanudar=reanudar
+            ruta_plan, 'trim', espacio_trabajo=str(base), reanudar=reanudar,
+            politica=permiso,
         )
     estado = 'simulado' if dry_run else ('correcto' if not resultado['fallidos'] else 'error')
     movidos = resultado['movidos']

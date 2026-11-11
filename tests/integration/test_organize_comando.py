@@ -58,7 +58,7 @@ def test_comando_aplicar_sin_flag_no_toca(estado_temporal, tmp_path):
 
 def test_aplicar_mueve_con_todos(estado_temporal, tmp_path):
     raiz = crear_arbol(tmp_path / 'proyecto')
-    resultado = organize.aplicar_organize(raiz, todos=True)
+    resultado = organize.aplicar_organize(raiz, todos=True, confirmar=True)
     assert resultado['estado'] == 'correcto'
     assert resultado['total_movidos'] == 3
     assert not (raiz / 'foto.jpg').exists()
@@ -71,13 +71,13 @@ def test_aplicar_bloqueado_en_solo_lectura(estado_temporal, tmp_path, monkeypatc
     raiz = crear_arbol(tmp_path / 'proyecto')
     monkeypatch.setenv('DEVKIT_READONLY', '1')
     with pytest.raises(ErrorSoloLectura):
-        organize.aplicar_organize(raiz, todos=True)
+        organize.aplicar_organize(raiz, todos=True, confirmar=True)
 
 
 def test_comando_aplicar_todos_json(estado_temporal, tmp_path):
     raiz = crear_arbol(tmp_path / 'proyecto')
     env = {'DEVKIT_ESTADO': str(tmp_path / 'estado')}
-    resultado = EJECUTOR.invoke(app, ['organize', 'aplicar', '--todos', str(raiz)], env=env)
+    resultado = EJECUTOR.invoke(app, ['organize', 'aplicar', '--todos', '--si', str(raiz)], env=env)
     assert resultado.exit_code == 0
     datos = json.loads(resultado.stdout)
     assert datos['total_movidos'] == 3
@@ -98,6 +98,6 @@ def test_aplicar_aborta_si_arbol_cambia(estado_temporal, tmp_path, monkeypatch):
         return plan
 
     monkeypatch.setattr(organize, 'construir_plan', plan_y_borrar)
-    resultado = organize.aplicar_organize(raiz, todos=True)
+    resultado = organize.aplicar_organize(raiz, todos=True, confirmar=True)
     assert resultado['estado'] == 'error'
     assert len(resultado['fallidos']) >= 1

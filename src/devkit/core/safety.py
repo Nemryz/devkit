@@ -13,7 +13,7 @@ from pathlib import Path
 
 from devkit.core import runlog
 from devkit.core import workspace as modulo_workspace
-from devkit.errors import ErrorIntegridad, ErrorSoloLectura
+from devkit.errors import ErrorIntegridad, ErrorPolitica, ErrorSoloLectura
 
 VALORES_ACTIVOS = {'1', 'true', 'si', 'yes', 'on'}
 
@@ -337,6 +337,36 @@ def _validar_acciones_comunes(acciones, base):
             destinos.add(destino)
 
 
+def _validar_politica(politica, herramienta, acciones):
+    # Comprueba que la politica cubre la capacidad y cada tipo de accion del plan.
+    if politica is None:
+        raise ErrorPolitica(
+            'POLITICA_AUSENTE: aplicar ' + herramienta + ' exige una politica explicita'
+        )
+    if politica.capacidad != herramienta:
+        raise ErrorPolitica(
+            'POLITICA_INCOHERENTE: la politica es de '
+            + politica.capacidad
+            + ', no de '
+            + herramienta
+        )
+    if politica.accion != 'aplicar':
+        raise ErrorPolitica(
+            'POLITICA_INCOHERENTE: la politica cubre '
+            + politica.accion
+            + ', no la accion aplicar'
+        )
+    for accion in acciones:
+        tipo = str(accion.get('tipo', 'papelera'))
+        if not politica.permite(tipo):
+            raise ErrorPolitica(
+                'ACCION_FUERA_DE_POLITICA: '
+                + tipo
+                + ' no esta permitida por la politica de '
+                + herramienta
+            )
+
+
 def _codigo_de_detalle(detalle: str) -> str:
     # Traduce el mensaje de validacion a un codigo estable para el journal.
     texto = detalle.lower()
@@ -385,9 +415,11 @@ def aplicar_manifiesto(
     espacio_trabajo='',
     autorizar=None,
     reanudar: bool = False,
+    politica=None,
 ):
     # Ejecutor unico de manifiestos persistentes de toda la suite de herramientas.
     verificar_escritura('aplicar ' + herramienta)
+    _validar_politica(politica, herramienta, [])
     preflight_plan(ruta_plan, espacio_trabajo)
     plan = cargar_plan(ruta_plan)
     acciones = [dict(accion) for accion in plan.get('acciones', [])]
@@ -401,6 +433,8 @@ def aplicar_manifiesto(
         raise ErrorIntegridad('la raiz de trabajo no existe ' + str(base))
     _validar_identidad(base, plan, dry_run=False)
     _validar_acciones_comunes(acciones, base)
+    _validar_politica(politica, herramienta, acciones)
+    anotacion = politica.como_dict()
     id_plan = ruta_plan.stem
     reconciliacion = None
     pendientes = None
@@ -436,7 +470,8 @@ def aplicar_manifiesto(
     indices = [i for i in range(len(acciones)) if pendientes is None or i in pendientes]
     ya_resueltas = len(acciones) - len(indices)
     id_ejec = runlog.iniciar_ejecucion(
-        herramienta, 'aplicar', espacio_trabajo=espacio_trabajo, id_plan=id_plan
+        herramienta, 'aplicar', espacio_trabajo=espacio_trabajo, id_plan=id_plan,
+        politica=anotacion,
     )
     movidos = []
     fallidos = []
@@ -456,6 +491,7 @@ def aplicar_manifiesto(
             espacio_trabajo=espacio_trabajo,
             id_plan=id_plan,
             nivel='accion',
+            politica=anotacion,
         )
 
     for posicion, indice in enumerate(indices):
@@ -468,6 +504,7 @@ def aplicar_manifiesto(
                 id_ejec, herramienta, 'accion', 'OMITIDO', 'sin autorizar',
                 origen=origen, destino=destino,
                 espacio_trabajo=espacio_trabajo, id_plan=id_plan, nivel='accion',
+                politica=anotacion,
             )
             continue
         detalle = _validar_accion(accion_actual)
@@ -476,6 +513,7 @@ def aplicar_manifiesto(
             origen=origen, destino=destino,
             codigo_error=_codigo_de_detalle(detalle) if detalle else '',
             espacio_trabajo=espacio_trabajo, id_plan=id_plan, nivel='accion',
+            politica=anotacion,
         )
         if detalle:
             codigo_error = _codigo_de_detalle(detalle)
@@ -486,6 +524,7 @@ def aplicar_manifiesto(
                 id_ejec, herramienta, 'accion', 'FAILED', detalle,
                 origen=origen, destino=destino, codigo=2, codigo_error=codigo_error,
                 espacio_trabajo=espacio_trabajo, id_plan=id_plan, nivel='accion',
+                politica=anotacion,
             )
             continue
         try:
@@ -495,6 +534,7 @@ def aplicar_manifiesto(
                 id_ejec, herramienta, 'accion', 'COMPLETED', 'aplicada',
                 origen=origen, destino=destino, codigo=0,
                 espacio_trabajo=espacio_trabajo, id_plan=id_plan, nivel='accion',
+                politica=anotacion,
             )
         except Exception as fallo:  # noqa: BLE001
             codigo_error = clasificar_error_windows(fallo)
@@ -510,6 +550,7 @@ def aplicar_manifiesto(
                 id_ejec, herramienta, 'accion', 'FAILED', detalle_final,
                 origen=origen, destino=destino, codigo=2, codigo_error=codigo_error,
                 espacio_trabajo=espacio_trabajo, id_plan=id_plan, nivel='accion',
+                politica=anotacion,
             )
             if codigo_error == 'DISCO_LLENO':
                 # Un disco lleno invalida el resto del lote; no se acumulan fallos identicos.
@@ -523,6 +564,7 @@ def aplicar_manifiesto(
                         destino=str(accion_restante.get('destino', '')),
                         codigo_error='DISCO_LLENO',
                         espacio_trabajo=espacio_trabajo, id_plan=id_plan, nivel='accion',
+                        politica=anotacion,
                     )
                 break
     omitidas_historicas = len(reconciliacion['omitidas']) if reconciliacion else 0
@@ -544,6 +586,7 @@ def aplicar_manifiesto(
     runlog.cerrar_ejecucion(
         id_ejec, herramienta, 'aplicar', estado, 0 if not fallidos else 2,
         detalle=estado_plan, espacio_trabajo=espacio_trabajo, id_plan=id_plan,
+        politica=anotacion,
     )
     return {
         'id_ejecucion': id_ejec,
@@ -556,12 +599,17 @@ def aplicar_manifiesto(
         'codigo': 0 if not fallidos else 2,
         'ya_resueltas': ya_resueltas,
         'reconciliacion': reconciliacion,
+        'politica_huella': politica.huella(),
     }
 
 
-def simular_manifiesto(ruta_plan, herramienta, espacio_trabajo='', autorizar=None):
+def simular_manifiesto(
+    ruta_plan, herramienta, espacio_trabajo='', autorizar=None, politica=None
+):
+    _validar_politica(politica, herramienta, [])
     plan = cargar_plan(ruta_plan)
     acciones = [dict(accion) for accion in plan.get('acciones', [])]
+    _validar_politica(politica, herramienta, acciones)
     plan_herramienta = str(plan.get('herramienta', ''))
     if plan_herramienta and plan_herramienta != herramienta:
         raise ErrorIntegridad(
@@ -596,10 +644,12 @@ def simular_manifiesto(ruta_plan, herramienta, espacio_trabajo='', autorizar=Non
         'codigo': 0 if not fallidos else 2,
         'dry_run': True,
         'estado_identidad': estado_identidad,
+        'politica_huella': politica.huella(),
     }
 
 
-def _simular_acciones(acciones, herramienta, base, autorizar=None):
+def _simular_acciones(acciones, herramienta, base, autorizar=None, politica=None):
+    _validar_politica(politica, herramienta, acciones)
     movidos = []
     fallidos = []
     omitidos = []
@@ -642,14 +692,20 @@ def _simular_acciones(acciones, herramienta, base, autorizar=None):
         'codigo': 0 if not fallidos else 2,
         'dry_run': True,
         'estado_identidad': 'sin_identidad',
+        'politica_huella': politica.huella(),
     }
 
 
-def aplicar_plan_persistente(ruta_plan: Path, espacio_trabajo: str = '') -> dict:
+def aplicar_plan_persistente(
+    ruta_plan: Path, espacio_trabajo: str = '', politica=None
+) -> dict:
     # Compatibilidad con la forma antigua del resultado del ejecutor.
     plan = cargar_plan(ruta_plan)
     base = espacio_trabajo or str(plan.get('workspace_root') or '')
-    resultado = aplicar_manifiesto(ruta_plan, 'plan', espacio_trabajo=base)
+    herramienta = str(plan.get('herramienta') or '')
+    resultado = aplicar_manifiesto(
+        ruta_plan, herramienta, espacio_trabajo=base, politica=politica
+    )
     return {
         'movidos': resultado['movidos'],
         'fallos': resultado['fallidos'],

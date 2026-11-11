@@ -27,7 +27,7 @@ def test_reconciliar_plan_completada():
     origen.unlink()  # simulate completed move
     from devkit.core import runlog, workspace
     wid = workspace.workspace_id(d)
-    id_ejec = runlog.iniciar_ejecucion('trim', 'aplicar', espacio_trabajo=str(d))
+    id_ejec = runlog.iniciar_ejecucion('organize', 'aplicar', espacio_trabajo=str(d))
     accion = {
         'tipo': 'mover',
         'origen': str(origen),
@@ -35,7 +35,9 @@ def test_reconciliar_plan_completada():
         'hash': safety.hash_contenido(destino),
         'tamano': destino.stat().st_size,
     }
-    ruta = safety.guardar_plan(id_ejec, 'trim', [accion], workspace_id=wid, workspace_root=str(d))
+    ruta = safety.guardar_plan(
+        id_ejec, 'organize', [accion], workspace_id=wid, workspace_root=str(d)
+    )
     rec = safety.reconciliar_plan(ruta, str(d))
     assert rec['completadas']
     assert not rec['pendientes']
@@ -49,7 +51,7 @@ def test_reconciliar_plan_pendiente():
     origen.write_text('contenido')
     from devkit.core import runlog, workspace
     wid = workspace.workspace_id(d)
-    id_ejec = runlog.iniciar_ejecucion('trim', 'aplicar', espacio_trabajo=str(d))
+    id_ejec = runlog.iniciar_ejecucion('organize', 'aplicar', espacio_trabajo=str(d))
     accion = {
         'tipo': 'mover',
         'origen': str(origen),
@@ -57,7 +59,9 @@ def test_reconciliar_plan_pendiente():
         'hash': 'abc123',
         'tamano': 9,
     }
-    ruta = safety.guardar_plan(id_ejec, 'trim', [accion], workspace_id=wid, workspace_root=str(d))
+    ruta = safety.guardar_plan(
+        id_ejec, 'organize', [accion], workspace_id=wid, workspace_root=str(d)
+    )
     rec = safety.reconciliar_plan(ruta, str(d))
     assert rec['pendientes']
     assert not rec['completadas']

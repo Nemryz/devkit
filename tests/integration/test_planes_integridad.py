@@ -124,7 +124,7 @@ def test_firma_detecta_modificacion_del_manifiesto(tmp_path):
             'tipo': 'mover',
         }
     ]
-    ruta_plan = safety.guardar_plan('x-2', 'prueba', manifiesto, destino_dir=tmp_path / 'planes')
+    ruta_plan = safety.guardar_plan('x-2', 'organize', manifiesto, destino_dir=tmp_path / 'planes')
     datos = safety.cargar_plan(ruta_plan)
     datos['acciones'][0]['destino'] = str(tmp_path / 'c.txt')
     ruta_plan.write_text(__import__('json').dumps(datos, ensure_ascii=False), encoding='utf-8')
@@ -149,17 +149,16 @@ def test_manifiesto_de_otra_herramienta_se_rechaza(tmp_path):
     archivo = raiz / 'a.txt'
     archivo.write_text('a', encoding='utf-8')
     manifiesto = [
-        {'origen': str(archivo), 'destino': str(raiz / 'b.txt'), 'tipo': 'mover',
-         'tamano': 1, 'mtime': archivo.stat().st_mtime}
+        {'origen': str(archivo), 'tipo': 'papelera'}
     ]
     wid = workspace.workspace_id(raiz)
     ruta_plan = safety.guardar_plan(
-        'x-tool', 'trim', manifiesto, workspace_id=wid, workspace_root=str(raiz)
+        'x-tool', 'dedupe', manifiesto, workspace_id=wid, workspace_root=str(raiz)
     )
     with pytest.raises(ErrorIntegridad):
         safety.aplicar_manifiesto(
-            ruta_plan, 'dedupe', espacio_trabajo=str(raiz),
-            politica=politica.derivar('dedupe', 'aplicar', forzada=True),
+            ruta_plan, 'trim', espacio_trabajo=str(raiz),
+            politica=politica.derivar('trim', 'aplicar', forzada=True),
         )
 
 

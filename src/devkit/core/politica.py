@@ -68,14 +68,55 @@ class Politica:
         }
 
 
-def derivar(
-    capacidad: str,
-    accion: str,
-    confirmada: bool = False,
-    forzada: bool = False,
-    flags: tuple[str, ...] = (),
-) -> Politica:
-    # Construye la politica de una accion y falla si falta una compuerta exigida.
+@dataclass(frozen=True)
+class Requerimientos:
+    # Declara que autorizacion exige un plan, antes de que exista una decision.
+    capacidad: str
+    accion: str
+    compuertas: tuple[str, ...]
+    tipos: tuple[str, ...]
+    permisos: tuple[str, ...]
+
+    def como_dict(self) -> dict:
+        # Devuelve la forma canonica que se guarda y se firma en el manifiesto.
+        return {
+            'capacidad': self.capacidad,
+            'accion': self.accion,
+            'compuertas': list(self.compuertas),
+            'tipos': list(self.tipos),
+            'permisos': list(self.permisos),
+        }
+
+    @classmethod
+    def desde_dict(cls, datos: dict) -> Requerimientos:
+        # Reconstruye los requerimientos firmados para compararlos con el catalogo.
+        capacidad = datos.get('capacidad')
+        accion = datos.get('accion')
+        if not isinstance(capacidad, str) or not isinstance(accion, str):
+            raise ValueError('los requerimientos no declaran capacidad y accion')
+        return cls(
+            capacidad=capacidad,
+            accion=accion,
+            compuertas=tuple(str(x) for x in datos.get('compuertas', [])),
+            tipos=tuple(str(x) for x in datos.get('tipos', [])),
+            permisos=tuple(str(x) for x in datos.get('permisos', [])),
+        )
+
+    def satisfechos_por(self, decision: Politica) -> bool:
+        # Una decision satisface el plan si cubre permisos, tipos y compuertas.
+        if decision.capacidad != self.capacidad or decision.accion != self.accion:
+            return False
+        if not set(self.permisos).issubset(set(decision.permisos)):
+            return False
+        if not set(self.tipos).issubset(set(decision.tipos)):
+            return False
+        if 'confirmacion' in self.compuertas and not decision.confirmada:
+            return False
+        return not ('anulacion' in self.compuertas and not decision.forzada)
+
+
+def requerimientos(capacidad: str, accion: str) -> Requerimientos:
+    # Lee del catalogo la autorizacion que exige una accion del ejecutor.
     registro = capabilities.obtener_capacidad(capacidad)
     if registro is None:
         raise ErrorPolitica(
@@ -92,11 +133,32 @@ def derivar(
             f'POLITICA_NO_DECLARADA: {capacidad} {accion} no declara compuertas ni tipos'
         )
     compuertas = dict(definicion.get('compuertas') or {})
-    if compuertas.get('confirmacion') and not confirmada:
+    exigidas = tuple(
+        nombre for nombre in ('confirmacion', 'anulacion') if compuertas.get(nombre)
+    )
+    return Requerimientos(
+        capacidad=capacidad,
+        accion=accion,
+        compuertas=exigidas,
+        tipos=tuple(definicion.get('tipos') or ()),
+        permisos=tuple(registro.get('write_permissions') or ()),
+    )
+
+
+def derivar(
+    capacidad: str,
+    accion: str,
+    confirmada: bool = False,
+    forzada: bool = False,
+    flags: tuple[str, ...] = (),
+) -> Politica:
+    # Construye la politica de una accion y falla si falta una compuerta exigida.
+    exigencia = requerimientos(capacidad, accion)
+    if 'confirmacion' in exigencia.compuertas and not confirmada:
         raise ErrorPolitica(
             f'CONFIRMACION_REQUERIDA: {capacidad} {accion} exige --si'
         )
-    if compuertas.get('anulacion') and not forzada:
+    if 'anulacion' in exigencia.compuertas and not forzada:
         raise ErrorPolitica(
             f'ANULACION_REQUERIDA: {capacidad} {accion} exige --forzar'
         )
@@ -105,18 +167,13 @@ def derivar(
         nombres.add('si')
     if forzada:
         nombres.add('forzar')
-    permisos = tuple(registro.get('write_permissions') or ())
-    tipos = tuple(definicion.get('tipos') or ())
-    exigidas = tuple(
-        nombre for nombre in ('confirmacion', 'anulacion') if compuertas.get(nombre)
-    )
     return Politica(
         capacidad=capacidad,
         accion=accion,
         confirmada=confirmada,
         forzada=forzada,
         flags=tuple(sorted(nombres)),
-        permisos=permisos,
-        tipos=tipos,
-        compuertas=exigidas,
+        permisos=exigencia.permisos,
+        tipos=exigencia.tipos,
+        compuertas=exigencia.compuertas,
     )

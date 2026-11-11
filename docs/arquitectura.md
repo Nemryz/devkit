@@ -14,6 +14,8 @@ Cada herramienta vive en un archivo propio, recibe sus dependencias por parametr
 
 El estado vive en la carpeta local del perfil del usuario. El journal es la fuente de verdad y se escribe antes de cada accion destructiva. Las bases SQLite son caches reconstruibles y nunca sustituyen al journal. Los planes persistentes viven en planes con firma SHA-256 del manifiesto para aplicar sin reescanear el arbol, con estado pendiente, aplicado o fallido.
 
+El manifiesto v2 declara `contrato_version`, los requerimientos de politica derivados del catalogo y acciones con `id` y `depende_de`. El grafo se valida antes de escribir y se recorre en orden topologico, de modo que una dependiente solo corre cuando su predecesora se completo. La version 1 sigue leyendose y se normaliza en memoria, mientras que la migracion explicita la reescribe y la vuelve a firmar.
+
 ## Flujo de una operacion destructiva
 
 La herramienta construye un plan con las acciones previstas. Si el modo de solo lectura esta activo, la operacion se rechaza con codigo cuatro. Si el plan se aprueba, se firma con SHA-256, se guarda el manifiesto y cada accion se registra en el journal antes de ejecutarse. El ejecutor exige una politica explicita, rechaza acciones fuera de los tipos declarados y anota en cada hito la huella, la decision y los flags que autorizaron el cambio. Un fallo a mitad deja el estado marcado como inconsistente y exige intervencion manual, porque no existe rollback automatico. La validacion del arbol comprueba que cada archivo sigue existiendo con mismo tamano, mtime y contenido antes de moverlo.

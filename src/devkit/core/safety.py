@@ -11,7 +11,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from devkit.core import runlog
+from devkit.core import capabilities, runlog
+from devkit.core import politica as modulo_politica
 from devkit.core import workspace as modulo_workspace
 from devkit.errors import ErrorIntegridad, ErrorPolitica, ErrorSoloLectura
 
@@ -34,7 +35,19 @@ def verificar_escritura(accion: str) -> None:
 
 
 CODIGO_MANIFEST_SCHEMA_VERSION_MISSING = 'MANIFEST_SCHEMA_VERSION_MISSING'
-SCHEMA_VERSION_ACTUAL = 1
+CODIGO_MANIFEST_SCHEMA_VERSION_NO_SOPORTADA = 'MANIFEST_SCHEMA_VERSION_NO_SOPORTADA'
+CODIGO_CONTRATO_VERSION_NO_SOPORTADA = 'CONTRATO_VERSION_NO_SOPORTADA'
+CODIGO_POLITICA_REQUERIDA_DESACTUALIZADA = 'POLITICA_REQUERIDA_DESACTUALIZADA'
+CODIGO_ACCION_DUPLICADA = 'ACCION_DUPLICADA'
+CODIGO_ACCION_SIN_ID = 'ACCION_SIN_ID'
+CODIGO_DEPENDENCIA_DESCONOCIDA = 'DEPENDENCIA_DESCONOCIDA'
+CODIGO_DEPENDENCIA_INVALIDA = 'DEPENDENCIA_INVALIDA'
+CODIGO_CICLO_DE_DEPENDENCIAS = 'CICLO_DE_DEPENDENCIAS'
+CODIGO_DEPENDENCIA_FALLIDA = 'DEPENDENCIA_FALLIDA'
+CODIGO_DEPENDENCIA_OMITIDA = 'DEPENDENCIA_OMITIDA'
+SCHEMA_VERSION_ACTUAL = 2
+SCHEMAS_SOPORTADOS = (1, 2)
+CONTRATOS_SOPORTADOS = (capabilities.VERSION_CONTRATO,)
 
 
 def firmar_plan(
@@ -44,6 +57,8 @@ def firmar_plan(
     workspace_id: str = '',
     workspace_root: str = '',
     herramienta: str = '',
+    contrato_version: int | None = None,
+    requisitos: dict | None = None,
 ) -> str:
     # Firma de integridad accidental, no de autenticidad, sobre todo el contenido del manifiesto.
     payload = {
@@ -54,8 +69,184 @@ def firmar_plan(
         'herramienta': herramienta,
         'acciones': acciones,
     }
+    # La version 1 conserva el payload antiguo para seguir verificando manifiestos existentes.
+    if schema_version >= 2:
+        payload['contrato_version'] = contrato_version
+        payload['politica'] = requisitos
     texto = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
     return hashlib.sha256(texto.encode('utf-8')).hexdigest()
+
+
+def _id_accion(indice: int) -> str:
+    # Genera identificadores estables y legibles para acciones sin id explicito.
+    return f'a{indice + 1:03d}'
+
+
+def _normalizar_acciones(acciones: list[dict], exigir_id: bool = False) -> list[dict]:
+    # Copia las acciones y completa id y dependencias sin inventar las que ya existen.
+    normalizadas = []
+    vistos = set()
+    for indice, accion in enumerate(acciones):
+        if not isinstance(accion, dict):
+            raise ErrorIntegridad(
+                f'{CODIGO_ACCION_SIN_ID}: la accion {indice} no es un objeto'
+            )
+        copia = dict(accion)
+        identificador = str(copia.get('id', '')).strip()
+        if not identificador:
+            if exigir_id:
+                raise ErrorIntegridad(
+                    f'{CODIGO_ACCION_SIN_ID}: la accion {indice} no declara id'
+                )
+            identificador = _id_accion(indice)
+        if identificador in vistos:
+            raise ErrorIntegridad(
+                f'{CODIGO_ACCION_DUPLICADA}: el id {identificador} aparece mas de una vez'
+            )
+        vistos.add(identificador)
+        dependencias = copia.get('depende_de', [])
+        if dependencias is None:
+            dependencias = []
+        if not isinstance(dependencias, (list, tuple)):
+            raise ErrorIntegridad(
+                f'{CODIGO_DEPENDENCIA_INVALIDA}: {identificador} no declara '
+                f'una lista de dependencias'
+            )
+        copia['id'] = identificador
+        copia['depende_de'] = [str(dependencia) for dependencia in dependencias]
+        normalizadas.append(copia)
+    return normalizadas
+
+
+def _indices_por_id(acciones: list[dict]) -> dict[str, int]:
+    # Relaciona cada id con su posicion para validar el grafo sin recorrerlo de nuevo.
+    indices: dict[str, int] = {}
+    for indice, accion in enumerate(acciones):
+        identificador = str(accion.get('id', ''))
+        if identificador in indices:
+            raise ErrorIntegridad(
+                f'{CODIGO_ACCION_DUPLICADA}: el id {identificador} aparece mas de una vez'
+            )
+        indices[identificador] = indice
+    return indices
+
+
+def orden_topologico(acciones: list[dict]) -> list[dict]:
+    # Ordena las acciones respetando dependencias y conservando el orden original entre iguales.
+    indices = _indices_por_id(acciones)
+    dependencias: dict[str, list[str]] = {}
+    for accion in acciones:
+        identificador = str(accion.get('id', ''))
+        lista = [str(d) for d in accion.get('depende_de', [])]
+        for dependencia in lista:
+            if dependencia not in indices:
+                raise ErrorIntegridad(
+                    f'{CODIGO_DEPENDENCIA_DESCONOCIDA}: {identificador} depende de '
+                    f'{dependencia}, que no existe'
+                )
+        dependencias[identificador] = lista
+    # Kahn con una cola ordenada por posicion para que el resultado sea reproducible.
+    pendientes = {
+        identificador: set(lista) for identificador, lista in dependencias.items()
+    }
+    ordenados: list[str] = []
+    while pendientes:
+        disponibles = sorted(
+            (identificador for identificador, faltan in pendientes.items() if not faltan),
+            key=lambda identificador: indices[identificador],
+        )
+        if not disponibles:
+            raise ErrorIntegridad(
+                f'{CODIGO_CICLO_DE_DEPENDENCIAS}: el plan contiene un ciclo entre '
+                + ', '.join(sorted(pendientes))
+            )
+        for identificador in disponibles:
+            ordenados.append(identificador)
+            del pendientes[identificador]
+        for faltan in pendientes.values():
+            faltan.difference_update(disponibles)
+    return [acciones[indices[identificador]] for identificador in ordenados]
+
+
+def _orden_de_ejecucion(acciones: list[dict]) -> list[int]:
+    # Traduce el orden topologico a posiciones del manifiesto para conservar sus indices.
+    indices = _indices_por_id(acciones)
+    ordenadas = orden_topologico(acciones)
+    return [indices[str(accion.get('id', ''))] for accion in ordenadas]
+
+
+def _requerimientos_del_catalogo(herramienta: str) -> modulo_politica.Requerimientos:
+    # Deriva del catalogo lo que un plan de aplicar necesita antes de existir la decision.
+    return modulo_politica.requerimientos(herramienta, 'aplicar')
+
+
+def _validar_tipos_declarados(
+    requisitos: modulo_politica.Requerimientos, acciones: list[dict]
+) -> None:
+    # Un manifiesto no puede declarar una politica que no cubra sus propios tipos de accion.
+    for accion in acciones:
+        tipo = str(accion.get('tipo', 'papelera'))
+        if tipo not in requisitos.tipos:
+            raise ErrorPolitica(
+                'ACCION_FUERA_DE_POLITICA: '
+                + tipo
+                + ' no esta declarada para '
+                + requisitos.capacidad
+            )
+
+
+def _escribir_manifiesto(ruta: Path, datos: dict) -> None:
+    # Reescribe el manifiesto mediante un temporal para no dejarlo a medias si el proceso muere.
+    temporal = ruta.with_name(ruta.name + '.tmp')
+    temporal.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding='utf-8')
+    os.replace(temporal, ruta)
+
+
+def _verificar_firma(datos: dict, ruta: Path, schema_version: int) -> None:
+    # Verifica la firma del payload exacto que declara la version del manifiesto.
+    firma_esperada = firmar_plan(
+        datos.get('acciones', []),
+        schema_version=schema_version,
+        plan_id=str(datos.get('plan_id') or datos.get('id_ejecucion') or ruta.stem),
+        workspace_id=str(datos.get('workspace_id', '')),
+        workspace_root=str(datos.get('workspace_root', '')),
+        herramienta=str(datos.get('herramienta', '')),
+        contrato_version=datos.get('contrato_version'),
+        requisitos=datos.get('politica'),
+    )
+    if firma_esperada != datos.get('firma'):
+        raise ErrorIntegridad(f'el plan {ruta} fue modificado, firma no coincide')
+
+
+def _requisitos_del_manifiesto(
+    datos: dict, ruta: Path
+) -> modulo_politica.Requerimientos:
+    # Comprueba que el manifiesto v2 declara la autorizacion vigente del catalogo.
+    bruto = datos.get('politica')
+    if not isinstance(bruto, dict):
+        raise ErrorIntegridad(
+            f'{CODIGO_POLITICA_REQUERIDA_DESACTUALIZADA}: el plan {ruta} no declara politica'
+        )
+    try:
+        declarados = modulo_politica.Requerimientos.desde_dict(bruto)
+    except ValueError as fallo:
+        raise ErrorIntegridad(
+            f'{CODIGO_POLITICA_REQUERIDA_DESACTUALIZADA}: {fallo}'
+        ) from fallo
+    herramienta = str(datos.get('herramienta', ''))
+    try:
+        actuales = _requerimientos_del_catalogo(herramienta)
+    except ErrorPolitica as fallo:
+        raise ErrorIntegridad(
+            f'{CODIGO_POLITICA_REQUERIDA_DESACTUALIZADA}: {fallo}'
+        ) from fallo
+    if declarados != actuales:
+        raise ErrorIntegridad(
+            f'{CODIGO_POLITICA_REQUERIDA_DESACTUALIZADA}: el plan {ruta} declara '
+            f'requerimientos de {declarados.capacidad} {declarados.accion} que ya no '
+            f'coinciden con el catalogo'
+        )
+    return declarados
 
 
 def guardar_plan(
@@ -66,21 +257,28 @@ def guardar_plan(
     workspace_id: str = '',
     workspace_root: str = '',
 ) -> Path:
-    # Guarda el manifiesto del plan para aplicar despues sin reescanear.
+    # Guarda el manifiesto v2 del plan para aplicar despues sin reescanear.
     from devkit.core import paths
 
+    requisitos = _requerimientos_del_catalogo(herramienta)
+    normalizadas = _normalizar_acciones(acciones)
+    _validar_tipos_declarados(requisitos, normalizadas)
+    ordenadas = orden_topologico(normalizadas)
     base = destino_dir or (paths.directorio_planes())
     base.mkdir(parents=True, exist_ok=True)
     firma = firmar_plan(
-        acciones,
+        ordenadas,
         schema_version=SCHEMA_VERSION_ACTUAL,
         plan_id=id_ejecucion,
         workspace_id=workspace_id,
         workspace_root=workspace_root,
         herramienta=herramienta,
+        contrato_version=capabilities.VERSION_CONTRATO,
+        requisitos=requisitos.como_dict(),
     )
     datos = {
         'schema_version': SCHEMA_VERSION_ACTUAL,
+        'contrato_version': capabilities.VERSION_CONTRATO,
         'plan_id': id_ejecucion,
         'id_ejecucion': id_ejecucion,
         'workspace_id': workspace_id,
@@ -88,17 +286,18 @@ def guardar_plan(
         'herramienta': herramienta,
         'fecha': datetime.now(UTC).isoformat(),
         'estado': 'pendiente',
+        'politica': requisitos.como_dict(),
         'firma': firma,
-        'total': len(acciones),
-        'acciones': acciones,
+        'total': len(ordenadas),
+        'acciones': ordenadas,
     }
     ruta = base / f'{id_ejecucion}.json'
-    ruta.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding='utf-8')
+    _escribir_manifiesto(ruta, datos)
     return ruta
 
 
 def cargar_plan(ruta: Path) -> dict:
-    # Carga un plan persistido y valida su firma antes de aplicarlo.
+    # Carga un plan persistido, valida su firma y normaliza la version 1 en memoria.
     try:
         datos = json.loads(ruta.read_text(encoding='utf-8'))
     except OSError as fallo:
@@ -111,30 +310,96 @@ def cargar_plan(ruta: Path) -> dict:
             f'{CODIGO_MANIFEST_SCHEMA_VERSION_MISSING}: el manifiesto no declara schema_version. '
             f'No se ejecuto ninguna accion. Utiliza un manifiesto compatible o genera uno nuevo.'
         )
-    if schema_version != SCHEMA_VERSION_ACTUAL:
+    if schema_version not in SCHEMAS_SOPORTADOS:
         raise ErrorIntegridad(
-            f'el manifiesto declara schema_version {schema_version}, no soportada. '
-            f'No se ejecuto ninguna accion.'
+            f'{CODIGO_MANIFEST_SCHEMA_VERSION_NO_SOPORTADA}: el manifiesto declara '
+            f'schema_version {schema_version}, no soportada. No se ejecuto ninguna accion.'
         )
-    acciones = datos.get('acciones', [])
-    firma_esperada = firmar_plan(
-        acciones,
-        schema_version=schema_version,
-        plan_id=str(datos.get('plan_id') or datos.get('id_ejecucion') or ruta.stem),
-        workspace_id=str(datos.get('workspace_id', '')),
-        workspace_root=str(datos.get('workspace_root', '')),
-        herramienta=str(datos.get('herramienta', '')),
+    if schema_version >= 2:
+        contrato = datos.get('contrato_version')
+        if contrato not in CONTRATOS_SOPORTADOS:
+            raise ErrorIntegridad(
+                f'{CODIGO_CONTRATO_VERSION_NO_SOPORTADA}: el manifiesto declara '
+                f'contrato_version {contrato}, no soportada. No se ejecuto ninguna accion.'
+            )
+        _requisitos_del_manifiesto(datos, ruta)
+    _verificar_firma(datos, ruta, schema_version)
+    acciones = _normalizar_acciones(
+        list(datos.get('acciones', [])), exigir_id=schema_version >= 2
     )
-    if firma_esperada != datos.get('firma'):
-        raise ErrorIntegridad(f'el plan {ruta} fue modificado, firma no coincide')
+    herramienta = str(datos.get('herramienta', ''))
+    try:
+        requisitos = _requerimientos_del_catalogo(herramienta)
+    except ErrorPolitica as fallo:
+        raise ErrorIntegridad(
+            f'{CODIGO_POLITICA_REQUERIDA_DESACTUALIZADA}: {fallo}'
+        ) from fallo
+    _validar_tipos_declarados(requisitos, acciones)
+    _indices_por_id(acciones)
+    orden_topologico(acciones)
+    datos['acciones'] = acciones
+    datos['total'] = len(acciones)
     return datos
 
 
+def migrar_plan(ruta_plan: Path) -> Path:
+    # Reescribe un manifiesto v1 como v2 conservando acciones, estado y metadatos.
+    try:
+        datos = json.loads(ruta_plan.read_text(encoding='utf-8'))
+    except OSError as fallo:
+        raise ErrorIntegridad(
+            f'no se pudo leer el plan {ruta_plan} porque {fallo}'
+        ) from fallo
+    except json.JSONDecodeError as fallo:
+        raise ErrorIntegridad(
+            f'el plan {ruta_plan} no es JSON valido porque {fallo}'
+        ) from fallo
+    version = datos.get('schema_version')
+    if version is None:
+        raise ErrorIntegridad(
+            f'{CODIGO_MANIFEST_SCHEMA_VERSION_MISSING}: el manifiesto no declara schema_version'
+        )
+    if version == SCHEMA_VERSION_ACTUAL:
+        # Migrar dos veces no cambia el archivo ni vuelve a firmarlo.
+        cargar_plan(ruta_plan)
+        return ruta_plan
+    if version != 1:
+        raise ErrorIntegridad(
+            f'{CODIGO_MANIFEST_SCHEMA_VERSION_NO_SOPORTADA}: el manifiesto declara '
+            f'schema_version {version}, no soportada'
+        )
+    _verificar_firma(datos, ruta_plan, 1)
+    herramienta = str(datos.get('herramienta', ''))
+    requisitos = _requerimientos_del_catalogo(herramienta)
+    acciones = _normalizar_acciones(list(datos.get('acciones', [])))
+    _validar_tipos_declarados(requisitos, acciones)
+    acciones = orden_topologico(acciones)
+    firma = firmar_plan(
+        acciones,
+        schema_version=SCHEMA_VERSION_ACTUAL,
+        plan_id=str(datos.get('plan_id') or datos.get('id_ejecucion') or ruta_plan.stem),
+        workspace_id=str(datos.get('workspace_id', '')),
+        workspace_root=str(datos.get('workspace_root', '')),
+        herramienta=herramienta,
+        contrato_version=capabilities.VERSION_CONTRATO,
+        requisitos=requisitos.como_dict(),
+    )
+    datos['schema_version'] = SCHEMA_VERSION_ACTUAL
+    datos['contrato_version'] = capabilities.VERSION_CONTRATO
+    datos['politica'] = requisitos.como_dict()
+    datos['migrado_desde'] = 1
+    datos['acciones'] = acciones
+    datos['total'] = len(acciones)
+    datos['firma'] = firma
+    _escribir_manifiesto(ruta_plan, datos)
+    return ruta_plan
+
+
 def actualizar_estado_plan(ruta_plan: Path, estado: str) -> None:
-    # Marca el manifiesto sin tocar la firma, que cubre solo las acciones.
+    # Marca el manifiesto sin tocar la firma, que cubre solo las acciones y su contrato.
     datos = json.loads(ruta_plan.read_text(encoding='utf-8'))
     datos['estado'] = estado
-    ruta_plan.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding='utf-8')
+    _escribir_manifiesto(ruta_plan, datos)
 
 
 def hash_contenido(ruta: Path) -> str:
@@ -337,7 +602,7 @@ def _validar_acciones_comunes(acciones, base):
             destinos.add(destino)
 
 
-def _validar_politica(politica, herramienta, acciones):
+def _validar_politica(politica, herramienta, acciones, requisitos=None):
     # Comprueba que la politica cubre la capacidad y cada tipo de accion del plan.
     if politica is None:
         raise ErrorPolitica(
@@ -356,6 +621,10 @@ def _validar_politica(politica, herramienta, acciones):
             + politica.accion
             + ', no la accion aplicar'
         )
+    if requisitos is not None and not requisitos.satisfechos_por(politica):
+        raise ErrorPolitica(
+            'POLITICA_INCOHERENTE: la politica no satisface los requerimientos del manifiesto'
+        )
     for accion in acciones:
         tipo = str(accion.get('tipo', 'papelera'))
         if not politica.permite(tipo):
@@ -365,6 +634,32 @@ def _validar_politica(politica, herramienta, acciones):
                 + ' no esta permitida por la politica de '
                 + herramienta
             )
+
+
+def _estados_iniciales(acciones: list[dict], reconciliacion: dict | None) -> dict[str, str]:
+    # Parten del estado reconciliado para que las dependencias historicas sigan contando.
+    estados = {str(accion.get('id', '')): 'PENDIENTE' for accion in acciones}
+    if reconciliacion:
+        for fila in reconciliacion.get('resultados', []):
+            indice = int(fila.get('indice', -1))
+            if 0 <= indice < len(acciones):
+                estados[str(acciones[indice].get('id', ''))] = str(fila.get('estado', 'PENDIENTE'))
+    return estados
+
+
+def _motivo_dependencia(accion: dict, estados: dict[str, str]) -> tuple[str, str] | None:
+    # Una accion solo corre si todas sus dependencias ya se completaron en este plan.
+    for dependencia in accion.get('depende_de', []):
+        identificador = str(dependencia)
+        estado = estados.get(identificador, 'DESCONOCIDA')
+        if estado == 'COMPLETADA':
+            continue
+        if estado == 'OMITIDA':
+            return CODIGO_DEPENDENCIA_OMITIDA, 'dependencia omitida: ' + identificador
+        if estado in ('FALLIDA', 'FAILED', 'AMBIGUA', 'INCONSISTENTE', 'DESCONOCIDA'):
+            return CODIGO_DEPENDENCIA_FALLIDA, 'dependencia fallida: ' + identificador
+        return CODIGO_DEPENDENCIA_FALLIDA, 'dependencia pendiente: ' + identificador
+    return None
 
 
 def _codigo_de_detalle(detalle: str) -> str:
@@ -433,7 +728,10 @@ def aplicar_manifiesto(
         raise ErrorIntegridad('la raiz de trabajo no existe ' + str(base))
     _validar_identidad(base, plan, dry_run=False)
     _validar_acciones_comunes(acciones, base)
-    _validar_politica(politica, herramienta, acciones)
+    requisitos = _requerimientos_del_catalogo(herramienta)
+    if int(plan.get('schema_version', 0)) >= 2:
+        requisitos = _requisitos_del_manifiesto(plan, ruta_plan)
+    _validar_politica(politica, herramienta, acciones, requisitos=requisitos)
     anotacion = politica.como_dict()
     id_plan = ruta_plan.stem
     reconciliacion = None
@@ -467,8 +765,10 @@ def aplicar_manifiesto(
                 'ya_resueltas': len(acciones),
                 'reconciliacion': reconciliacion,
             }
-    indices = [i for i in range(len(acciones)) if pendientes is None or i in pendientes]
+    orden = _orden_de_ejecucion(acciones)
+    indices = [i for i in orden if pendientes is None or i in pendientes]
     ya_resueltas = len(acciones) - len(indices)
+    estados = _estados_iniciales(acciones, reconciliacion)
     id_ejec = runlog.iniciar_ejecucion(
         herramienta, 'aplicar', espacio_trabajo=espacio_trabajo, id_plan=id_plan,
         politica=anotacion,
@@ -498,7 +798,21 @@ def aplicar_manifiesto(
         accion_actual = acciones[indice]
         origen = str(accion_actual.get('origen', ''))
         destino = str(accion_actual.get('destino', ''))
+        id_accion = str(accion_actual.get('id', ''))
+        motivo_dependencia = _motivo_dependencia(accion_actual, estados)
+        if motivo_dependencia is not None:
+            codigo_error, detalle = motivo_dependencia
+            estados[id_accion] = 'OMITIDA'
+            omitidos.append(accion_actual)
+            runlog.registrar_hito(
+                id_ejec, herramienta, 'accion', 'OMITIDO', detalle,
+                origen=origen, destino=destino, codigo_error=codigo_error,
+                espacio_trabajo=espacio_trabajo, id_plan=id_plan, nivel='accion',
+                politica=anotacion,
+            )
+            continue
         if autorizar is not None and not autorizar(accion_actual):
+            estados[id_accion] = 'OMITIDA'
             omitidos.append(accion_actual)
             runlog.registrar_hito(
                 id_ejec, herramienta, 'accion', 'OMITIDO', 'sin autorizar',
@@ -517,6 +831,7 @@ def aplicar_manifiesto(
         )
         if detalle:
             codigo_error = _codigo_de_detalle(detalle)
+            estados[id_accion] = 'FALLIDA'
             fallidos.append(
                 {'origen': origen, 'detalle': detalle, 'codigo_error': codigo_error}
             )
@@ -529,6 +844,7 @@ def aplicar_manifiesto(
             continue
         try:
             _ejecutar_accion_con_reintento(accion_actual, al_reintentar=anotar_reintento)
+            estados[id_accion] = 'COMPLETADA'
             movidos.append(accion_actual)
             runlog.registrar_hito(
                 id_ejec, herramienta, 'accion', 'COMPLETED', 'aplicada',
@@ -543,6 +859,7 @@ def aplicar_manifiesto(
                 detalle_final = texto
             else:
                 detalle_final = codigo_error + ': ' + texto
+            estados[id_accion] = 'FALLIDA'
             fallidos.append(
                 {'origen': origen, 'detalle': detalle_final, 'codigo_error': codigo_error}
             )
@@ -556,6 +873,7 @@ def aplicar_manifiesto(
                 # Un disco lleno invalida el resto del lote; no se acumulan fallos identicos.
                 for restante in indices[posicion + 1:]:
                     accion_restante = acciones[restante]
+                    estados[str(accion_restante.get('id', ''))] = 'OMITIDA'
                     omitidos.append(accion_restante)
                     runlog.registrar_hito(
                         id_ejec, herramienta, 'accion', 'OMITIDO',
@@ -575,7 +893,7 @@ def aplicar_manifiesto(
         and len(movidos) + ya_resueltas == len(acciones)
     ):
         estado_plan = 'aplicado'
-    elif movidos or ya_resueltas:
+    elif movidos or ya_resueltas or omitidos:
         estado_plan = 'parcial'
     elif fallidos:
         estado_plan = 'fallido'
@@ -603,62 +921,36 @@ def aplicar_manifiesto(
     }
 
 
-def simular_manifiesto(
-    ruta_plan, herramienta, espacio_trabajo='', autorizar=None, politica=None
+def _simular_acciones_ordenadas(
+    acciones,
+    herramienta,
+    base,
+    autorizar=None,
+    politica=None,
+    estado_identidad='sin_identidad',
 ):
-    _validar_politica(politica, herramienta, [])
-    plan = cargar_plan(ruta_plan)
-    acciones = [dict(accion) for accion in plan.get('acciones', [])]
-    _validar_politica(politica, herramienta, acciones)
-    plan_herramienta = str(plan.get('herramienta', ''))
-    if plan_herramienta and plan_herramienta != herramienta:
-        raise ErrorIntegridad(
-            'el manifiesto pertenece a ' + plan_herramienta + ', no a ' + herramienta
-        )
-    base = Path(espacio_trabajo).expanduser().resolve() if espacio_trabajo else Path.cwd().resolve()
-    if not base.is_dir():
-        raise ErrorIntegridad('la raiz de trabajo no existe ' + str(base))
-    estado_identidad = _validar_identidad(base, plan, dry_run=True)
-    _validar_acciones_comunes(acciones, base)
-    movidos = []
-    fallidos = []
-    omitidos = []
-    for accion in acciones:
-        origen = str(accion.get('origen', ''))
-        if autorizar is not None and not autorizar(accion):
-            omitidos.append(accion)
-            continue
-        detalle = _validar_accion(accion)
-        if detalle:
-            fallidos.append({'origen': origen, 'detalle': detalle})
-        else:
-            movidos.append(accion)
-    return {
-        'id_ejecucion': '',
-        'id_plan': ruta_plan.stem,
-        'estado_plan': 'simulado',
-        'movidos': movidos,
-        'fallidos': fallidos,
-        'omitidos': omitidos,
-        'total': len(acciones),
-        'codigo': 0 if not fallidos else 2,
-        'dry_run': True,
-        'estado_identidad': estado_identidad,
-        'politica_huella': politica.huella(),
-    }
-
-
-def _simular_acciones(acciones, herramienta, base, autorizar=None, politica=None):
-    _validar_politica(politica, herramienta, acciones)
+    # Simula el plan completo en orden de dependencias y omite lo que nunca llegaria a correr.
+    orden = _orden_de_ejecucion(acciones)
+    estados = {str(accion.get('id', '')): 'PENDIENTE' for accion in acciones}
     movidos = []
     fallidos = []
     omitidos = []
     destinos = set()
-    for accion in acciones:
+    for indice in orden:
+        accion = acciones[indice]
+        identificador = str(accion.get('id', ''))
         origen = str(accion.get('origen', ''))
         destino = str(accion.get('destino', ''))
+        motivo = _motivo_dependencia(accion, estados)
+        if motivo is not None:
+            estados[identificador] = 'OMITIDA'
+            omitidos.append(accion)
+            continue
         if destino and destino in destinos:
-            fallidos.append({'origen': origen, 'detalle': 'destino duplicado: ' + destino})
+            estados[identificador] = 'FALLIDA'
+            fallidos.append(
+                {'origen': origen, 'detalle': 'destino duplicado: ' + destino}
+            )
             continue
         if destino:
             destinos.add(destino)
@@ -666,6 +958,7 @@ def _simular_acciones(acciones, herramienta, base, autorizar=None, politica=None
         for clave in ('origen', 'destino'):
             valor = accion.get(clave)
             if valor and not modulo_workspace.esta_contenida(base, Path(str(valor))):
+                estados[identificador] = 'FALLIDA'
                 fallidos.append(
                     {'origen': origen, 'detalle': 'ruta fuera del workspace: ' + str(valor)}
                 )
@@ -674,12 +967,21 @@ def _simular_acciones(acciones, herramienta, base, autorizar=None, politica=None
         if fuera:
             continue
         if autorizar is not None and not autorizar(accion):
+            estados[identificador] = 'OMITIDA'
             omitidos.append(accion)
             continue
         detalle = _validar_accion(accion)
         if detalle:
-            fallidos.append({'origen': origen, 'detalle': detalle})
+            estados[identificador] = 'FALLIDA'
+            fallidos.append(
+                {
+                    'origen': origen,
+                    'detalle': detalle,
+                    'codigo_error': _codigo_de_detalle(detalle),
+                }
+            )
         else:
+            estados[identificador] = 'COMPLETADA'
             movidos.append(accion)
     return {
         'id_ejecucion': '',
@@ -691,9 +993,46 @@ def _simular_acciones(acciones, herramienta, base, autorizar=None, politica=None
         'total': len(acciones),
         'codigo': 0 if not fallidos else 2,
         'dry_run': True,
-        'estado_identidad': 'sin_identidad',
-        'politica_huella': politica.huella(),
+        'estado_identidad': estado_identidad,
+        'politica_huella': politica.huella() if politica is not None else '',
     }
+
+
+def simular_manifiesto(
+    ruta_plan, herramienta, espacio_trabajo='', autorizar=None, politica=None
+):
+    _validar_politica(politica, herramienta, [])
+    plan = cargar_plan(ruta_plan)
+    acciones = [dict(accion) for accion in plan.get('acciones', [])]
+    requisitos = _requerimientos_del_catalogo(herramienta)
+    if int(plan.get('schema_version', 0)) >= 2:
+        requisitos = _requisitos_del_manifiesto(plan, ruta_plan)
+    _validar_politica(politica, herramienta, acciones, requisitos=requisitos)
+    plan_herramienta = str(plan.get('herramienta', ''))
+    if plan_herramienta and plan_herramienta != herramienta:
+        raise ErrorIntegridad(
+            'el manifiesto pertenece a ' + plan_herramienta + ', no a ' + herramienta
+        )
+    base = Path(espacio_trabajo).expanduser().resolve() if espacio_trabajo else Path.cwd().resolve()
+    if not base.is_dir():
+        raise ErrorIntegridad('la raiz de trabajo no existe ' + str(base))
+    estado_identidad = _validar_identidad(base, plan, dry_run=True)
+    _validar_acciones_comunes(acciones, base)
+    resultado = _simular_acciones_ordenadas(
+        acciones, herramienta, base, autorizar, politica, estado_identidad
+    )
+    resultado['id_plan'] = ruta_plan.stem
+    return resultado
+
+
+def _simular_acciones(acciones, herramienta, base, autorizar=None, politica=None):
+    _validar_politica(politica, herramienta, [])
+    normalizadas = _normalizar_acciones(acciones)
+    _validar_politica(politica, herramienta, normalizadas)
+    ordenadas = orden_topologico(normalizadas)
+    return _simular_acciones_ordenadas(
+        ordenadas, herramienta, base, autorizar, politica, 'sin_identidad'
+    )
 
 
 def aplicar_plan_persistente(
@@ -857,8 +1196,10 @@ def reconciliar_plan(ruta_plan: Path, espacio_trabajo: str = '') -> dict:
         for h in historial
         if h.get('estado') == 'COMPLETED'
     }
-    resultados = []
-    for indice, accion in enumerate(acciones):
+    resultados: dict[int, dict] = {}
+    estado_por_id: dict[str, str] = {}
+    for indice in _orden_de_ejecucion(acciones):
+        accion = acciones[indice]
         clave = (str(accion.get('origen', '')), str(accion.get('destino', '')))
         if clave in omitidas:
             estado = 'OMITIDA'
@@ -875,21 +1216,33 @@ def reconciliar_plan(ruta_plan: Path, espacio_trabajo: str = '') -> dict:
                 motivo = 'origen presente y destino ausente'
             elif estado == 'INCONSISTENTE':
                 motivo = 'origen y destino ausentes'
-        resultados.append({
+        if estado == 'PENDIENTE':
+            # Una dependencia omitida impide ejecutar la accion, aunque su origen siga presente.
+            for dependencia in accion.get('depende_de', []):
+                if estado_por_id.get(str(dependencia)) == 'OMITIDA':
+                    estado = 'OMITIDA'
+                    motivo = 'dependencia omitida: ' + str(dependencia)
+                    break
+        identificador = str(accion.get('id', ''))
+        fila = {
             'indice': indice,
+            'id': identificador,
             'tipo': str(accion.get('tipo', 'papelera')),
             'origen': clave[0],
             'destino': clave[1],
             'estado': estado,
             'motivo': motivo,
-        })
+        }
+        resultados[indice] = fila
+        estado_por_id[identificador] = estado
+    finales = [resultados[indice] for indice in range(len(acciones))]
     return {
         'id_plan': ruta_plan.stem,
         'total': len(acciones),
-        'resultados': resultados,
-        'pendientes': [r for r in resultados if r['estado'] == 'PENDIENTE'],
-        'ambiguas': [r for r in resultados if r['estado'] == 'AMBIGUA'],
-        'inconsistentes': [r for r in resultados if r['estado'] == 'INCONSISTENTE'],
-        'completadas': [r for r in resultados if r['estado'] == 'COMPLETADA'],
-        'omitidas': [r for r in resultados if r['estado'] == 'OMITIDA'],
+        'resultados': finales,
+        'pendientes': [r for r in finales if r['estado'] == 'PENDIENTE'],
+        'ambiguas': [r for r in finales if r['estado'] == 'AMBIGUA'],
+        'inconsistentes': [r for r in finales if r['estado'] == 'INCONSISTENTE'],
+        'completadas': [r for r in finales if r['estado'] == 'COMPLETADA'],
+        'omitidas': [r for r in finales if r['estado'] == 'OMITIDA'],
     }

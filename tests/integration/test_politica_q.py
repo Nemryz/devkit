@@ -38,6 +38,41 @@ def _manifiesto(
     )
 
 
+def _manifiesto_v1(
+    base: Path,
+    acciones: list[dict],
+    herramienta: str = 'trim',
+    identificador: str = 'plan-q-v1',
+) -> Path:
+    # Guarda un manifiesto de la version anterior para probar la lectura normalizada.
+    destino = base / 'planes'
+    destino.mkdir(parents=True, exist_ok=True)
+    ident = workspace.workspace_id(base)
+    firma = safety.firmar_plan(
+        acciones,
+        schema_version=1,
+        plan_id=identificador,
+        workspace_id=ident,
+        workspace_root=str(base),
+        herramienta=herramienta,
+    )
+    datos = {
+        'schema_version': 1,
+        'plan_id': identificador,
+        'id_ejecucion': identificador,
+        'workspace_id': ident,
+        'workspace_root': str(base),
+        'herramienta': herramienta,
+        'estado': 'pendiente',
+        'firma': firma,
+        'total': len(acciones),
+        'acciones': acciones,
+    }
+    ruta = destino / f'{identificador}.json'
+    ruta.write_text(json.dumps(datos, ensure_ascii=False), encoding='utf-8')
+    return ruta
+
+
 def _accion_mover(base: Path, nombre: str = 'archivo.txt') -> tuple[dict, Path, Path]:
     # Construye una accion de movimiento con tamano y hash coherentes.
     origen = base / nombre
@@ -184,7 +219,7 @@ def test_politica_de_otra_capacidad_se_rechaza(tmp_path):
 def test_tipo_de_accion_fuera_de_politica(tmp_path):
     # La politica de trim solo cubre papelera, no movimientos.
     accion, origen, destino = _accion_mover(tmp_path)
-    ruta_plan = _manifiesto(tmp_path, [accion], herramienta='trim')
+    ruta_plan = _manifiesto_v1(tmp_path, [accion], herramienta='trim')
     with pytest.raises(ErrorPolitica, match='ACCION_FUERA_DE_POLITICA'):
         safety.aplicar_manifiesto(
             ruta_plan, 'trim', espacio_trabajo=str(tmp_path),

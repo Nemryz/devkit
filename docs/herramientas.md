@@ -1,5 +1,7 @@
 # Herramientas
 
+Los planes que se aplican sin reescanear usan un manifiesto v2 firmado: las acciones llevan `id` y `depende_de`, el orden es topologico y la politica requerida se deriva del catalogo. Una dependiente de una accion fallida u omitida queda `OMITIDA` con su codigo, y el plan se marca `parcial`. Los manifiestos v1 se siguen leyendo y se migran de forma explicita.
+
 ## doctor
 
 Comprueba el entorno antes de ejecutar cualquier otra herramienta. Revisa version de Python, dependencias del nucleo, memoria, disco, carpeta de estado, journal, OneDrive, rutas largas y elevacion. Devuelve JSON por defecto y acepta el formato tabla.

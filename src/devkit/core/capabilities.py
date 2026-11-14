@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from devkit.errors import ErrorIntegridad
+
 VERSION_CONTRATO = 1
+CONTRATOS_SOPORTADOS = (VERSION_CONTRATO,)
 
 # Clasificacion de todos los comandos de nivel superior del CLI.
 # capability: funcionalidad invocable por un agente.
@@ -24,6 +27,7 @@ CLASIFICACION: dict[str, str] = {
     'capabilities': 'discovery',
     'describe': 'discovery',
     'schema': 'discovery',
+    'migrate': 'administration',
 }
 
 
@@ -252,9 +256,35 @@ CAPACIDADES: list[dict[str, Any]] = [
 ]
 
 
+# Cada accion hereda la version vigente salvo que declare una propia.
+for _capacidad in CAPACIDADES:
+    for _definicion in _capacidad['actions'].values():
+        _definicion.setdefault('contrato_version', VERSION_CONTRATO)
+
+
 def listar_capacidades() -> list[dict[str, Any]]:
     # Devuelve una copia superficial del registro para que el CLI no lo mute.
     return [dict(capacidad) for capacidad in CAPACIDADES]
+
+
+def version_contrato_de(nombre: str, accion: str) -> int:
+    # Devuelve la version que declara una accion y rechaza las no soportadas.
+    capacidad = obtener_capacidad(nombre)
+    if capacidad is None:
+        raise ErrorIntegridad(f'no existe la herramienta {nombre}')
+    definicion = capacidad.get('actions', {}).get(accion)
+    if not isinstance(definicion, dict):
+        raise ErrorIntegridad(f'no existe la accion {accion} en {nombre}')
+    version = definicion.get('contrato_version')
+    if not isinstance(version, int):
+        raise ErrorIntegridad(
+            f'CONTRATO_VERSION_NO_SOPORTADA: {nombre} {accion} no declara version'
+        )
+    if version not in CONTRATOS_SOPORTADOS:
+        raise ErrorIntegridad(
+            f'CONTRATO_VERSION_NO_SOPORTADA: {nombre} {accion} declara {version}'
+        )
+    return version
 
 
 def obtener_capacidad(nombre: str) -> dict[str, Any] | None:

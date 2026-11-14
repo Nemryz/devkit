@@ -41,3 +41,7 @@ Construye un indice SQLite con FTS5 sobre las notas. Permite buscar, actualizar 
 ## ocr
 
 Extrae texto y metricas de confianza en modo de solo lectura con Tesseract y PyMuPDF. Soporta imagenes y PDFs. Genera notas con origen ocr listas para idea e index. No mueve, borra ni clasifica archivos.
+
+## migrate
+
+Migra un plan o una configuracion a la version vigente sobre una ruta explicita, con `--tipo plan|config`. Reporta la version de origen y la de destino, no escribe nada si el dato ya esta al dia y solo deja hito en el journal cuando cambio algo. `--desde` y `--hasta` exigen las versiones esperadas y fallan sin tocar el archivo si no coinciden. Las versiones desconocidas se rechazan con codigo estable.

@@ -9,6 +9,7 @@ import typer
 
 from devkit import __version__
 from devkit.core import capabilities as modulo_capacidades
+from devkit.core import migracion as modulo_migracion
 from devkit.core.output import emitir
 from devkit.errors import ErrorBase
 from devkit.tools import backup as modulo_respaldo
@@ -129,6 +130,7 @@ def comando_capabilities(
         'estado': 'correcto',
         'codigo': 0,
         'version_contrato': modulo_capacidades.VERSION_CONTRATO,
+        'contratos_soportados': list(modulo_capacidades.CONTRATOS_SOPORTADOS),
         'total': len(capacidades),
         'capacidades': capacidades,
     }
@@ -190,13 +192,21 @@ def comando_schema(
             formato=formato,
         )
         raise typer.Exit(code=2)
+    version_accion = int(capacidad.get('contrato_version', modulo_capacidades.VERSION_CONTRATO))
+    if accion in entradas:
+        try:
+            version_accion = modulo_capacidades.version_contrato_de(herramienta, accion)
+        except ErrorBase as fallo:
+            salir_con_error('schema', fallo, formato)
+            return
     resultado = {
         'herramienta': 'devkit',
         'accion': 'schema',
         'estado': 'correcto',
         'codigo': 0,
         'version_esquema': 1,
-        'version_contrato': modulo_capacidades.VERSION_CONTRATO,
+        'version_contrato': version_accion,
+        'version_contrato_capacidad': capacidad.get('contrato_version'),
         'herramienta_objetivo': herramienta,
         'accion_objetivo': accion,
         'entrada': entradas.get(accion, {}).get('params', {}),
@@ -204,6 +214,37 @@ def comando_schema(
     }
     emitir(resultado, formato=formato)
     raise typer.Exit(code=resultado['codigo'])
+
+
+@app.command('migrate')
+def comando_migrate(
+    ruta: Path = typer.Argument(..., help='Archivo de plan o configuracion a migrar.'),
+    tipo: str = typer.Option(..., '--tipo', help='Tipo de dato, plan o config.'),
+    desde: int | None = typer.Option(
+        None, '--desde', help='Version de origen esperada.'
+    ),
+    hasta: int | None = typer.Option(
+        None, '--hasta', help='Version de destino requerida.'
+    ),
+    formato: str = typer.Option('json', '--formato', '-f', help='Formato de salida.'),
+) -> None:
+    # Migra un plan o una configuracion y reporta la version de origen y la de destino.
+    try:
+        resultado = modulo_migracion.migrar(ruta, tipo, desde=desde, hasta=hasta)
+    except ErrorBase as fallo:
+        salir_con_error('migrate', fallo, formato)
+        return
+    salida = {
+        'herramienta': 'devkit',
+        'accion': 'migrate',
+        'estado': 'correcto',
+        'codigo': 0,
+        **resultado,
+    }
+    emitir(salida, formato=formato)
+    raise typer.Exit(code=0)
+
+
 @app.command('buscar')
 def comando_buscar(
     termino: str = typer.Argument(..., help='Termino a buscar e identificar.'),

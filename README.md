@@ -467,8 +467,17 @@ El núcleo concentra lo que comparten todas las herramientas y no contiene lógi
 | proceso.py | Procesos con prioridad baja y Job Object |
 | sistema.py | Información del sistema operativo |
 | config.py | Configuración persistente en TOML con sección storage y errores explícitos ante archivo dañado |
+| migracion.py | Migración explícita de planes y configuraciones a la versión vigente, idempotente |
 | errors.py | Excepciones con códigos de salida estables |
 | markdown.py | Parser de frontmatter, slugify, enlaces rotos |
+
+## Versionado y compatibilidad
+
+La versión del paquete y la versión de contrato son independientes. `dev --version` publica la versión instalada, mientras que `dev capabilities`, `dev describe` y `dev schema` publican la versión de contrato de cada capacidad y de cada acción. Un cambio interno del paquete no toca contratos, y un contrato puede avanzar para una acción concreta sin publicar un paquete nuevo.
+
+Versiones aceptadas: los manifiestos de plan declaran `schema_version: 2` con `contrato_version: 1`; la versión 1 del manifiesto se lee, se normaliza en memoria y se migra de forma explícita. La configuración declara `version = 1`; un archivo sin `version` se considera anterior y se migra sin alterar sus valores. Cualquier versión de manifiesto, contrato o configuración que el código no entiende se rechaza con un código estable (`MANIFEST_SCHEMA_VERSION_NO_SOPORTADA`, `CONTRATO_VERSION_NO_SOPORTADA`, `CONFIG_VERSION_NO_SOPORTADA`) en lugar de interpretarse.
+
+`dev migrate <ruta> --tipo plan|config` reescribe solo cuando hace falta y reporta la versión de origen y la de destino. `--desde` exige la versión de origen y `--hasta` exige la de destino; si no coinciden, el comando falla sin tocar el archivo. La segunda ejecución no cambia bytes ni agrega hitos al journal, y la migración solo deja constancia en el journal cuando realmente cambió algo.
 
 ## Reglas del proyecto
 

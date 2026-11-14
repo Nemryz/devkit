@@ -50,12 +50,21 @@ Se elimina del extra `docs`. No se importa en `src` y su licencia AGPL no aporta
 
 La CI distingue dependencias centrales de extras opcionales. Las dependencias centrales no deben contener licencias copyleft. Los extras se auditan por separado y sus licencias se documentan en `THIRD_PARTY.md`.
 
+### 7. Versionado de contrato
+
+La version del paquete y la version de contrato son independientes. La version del paquete tiene su fuente en `pyproject.toml` y la verifica la CI en cada etiqueta. La version de contrato se declara en el catalogo, por capacidad y por accion, y `dev capabilities`, `dev describe` y `dev schema` la publican junto a los parametros. Un contrato puede avanzar para una accion sin publicar un paquete nuevo, y un cambio interno del paquete no toca contratos.
+
+Los manifiestos de plan declaran `schema_version` y `contrato_version`. La version vigente es manifiesto 2 con contrato 1. La version 1 del manifiesto se sigue leyendo y se migra de forma explicita, con una migracion idempotente que reescribe y vuelve a firmar. La configuracion declara `version = 1` y un archivo sin `version` se migra anadiendo la clave sin alterar valores. Toda version desconocida de manifiesto, contrato o configuracion se rechaza con un codigo estable, nunca se interpreta.
+
+`dev migrate <ruta> --tipo plan|config` aplica esas migraciones sobre una ruta explicita, con `--desde` y `--hasta` opcionales para exigir las versiones, y no deja efectos si el dato ya esta en la version vigente.
+
 ## Consecuencias
 
 - DevKit puede distribuirse bajo Apache-2.0 sin obligaciones copyleft en el nucleo.
 - El OCR queda como capacidad opcional con una dependencia AGPL/comercial documentada.
 - La sustitucion de PyMuPDF queda como deuda planificada con fecha.
 - La version tiene una sola fuente y la CI la verifica.
+- La compatibilidad se negocia por version de contrato declarada en el catalogo y no por la version del paquete.
 
 ## Alternativas consideradas
 

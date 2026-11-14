@@ -9,6 +9,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from devkit.core import paths
 from devkit.errors import ErrorConfiguracion
 
+VERSION_CONFIG_ACTUAL = 1
+VERSIONES_CONFIG_SOPORTADAS = (VERSION_CONFIG_ACTUAL,)
+CODIGO_CONFIG_VERSION_NO_SOPORTADA = 'CONFIG_VERSION_NO_SOPORTADA'
+
 
 class ConfiguracionAlmacenamiento(BaseModel):
     # El campo config queda fuera a proposito porque la carpeta de configuracion
@@ -53,6 +57,12 @@ def cargar_configuracion() -> Configuracion:
         raise ErrorConfiguracion(
             f'no se pudo leer la configuracion {ruta} porque {fallo}'
         ) from fallo
+    version = datos.get('version', VERSION_CONFIG_ACTUAL)
+    if version not in VERSIONES_CONFIG_SOPORTADAS:
+        raise ErrorConfiguracion(
+            f'{CODIGO_CONFIG_VERSION_NO_SOPORTADA}: la configuracion {ruta} declara '
+            f'version {version}, no soportada'
+        )
     try:
         return Configuracion(**datos)
     except ValidationError as fallo:

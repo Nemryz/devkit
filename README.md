@@ -173,7 +173,29 @@ dev index actualizar C:\Notas
 dev index exportar C:\Notas\export.json --raiz C:\Notas
 ```
 
-Construye un índice FTS5 (tokenize unicode61) sobre título y cuerpo en `<raiz>/.devkit/index.sqlite`. Permite buscar con fragmentos resaltados. Actualiza de forma incremental por mtime. Exporta a JSON. La raíz del índice se resuelve por precedencia: `--raiz` explícito > variable `DEVKIT_WORKSPACE` > directorio actual. Si no existe el índice en esa raíz, avisa con `ejecuta index construir` y no consulta ningún índice global de forma silenciosa. Cada raíz edita y actualiza su propio `.devkit`; si la raíz no permite crear esa carpeta, falla con error explícito en lugar de guardar el índice en otro sitio.
+Construye un índice FTS5 (tokenize unicode61) sobre título y cuerpo en `<raiz>/.devkit/index.sqlite`. Permite buscar con fragmentos resaltados. Actualiza de forma incremental por mtime. Exporta a JSON. La raíz del índice se resuelve por precedencia: `--raiz` explícito > variable `DEVKIT_WORKSPACE` > directorio actual. Si no existe el índice en esa raíz, avisa con `ejecuta index construir` y no consulta ningún índice global de forma silenciosa. Cada raíz edita y actualiza su propio `.devkit`; si la raíz no permite crear esa carpeta, falla con error explícito en lugar de guardar el índice en otro sitio. Soporta la fuente workspace con `--con-workspace`/`--sin-workspace` y reconstruccion del indice v1 a v2.
+
+### workspace
+
+Detecta proyectos, tecnologias, dependencias y relaciones del workspace en solo lectura.
+
+```powershell
+dev workspace detectar
+dev workspace detectar --raiz C:\Proyectos --profundidad 6 --limite 50
+```
+
+Recorre el arbol sin seguir enlaces ni junctions. Soporta Python, Node, Rust, Go, JVM, .NET, PHP, Ruby y marcadores de documentacion. Emite avisos con codigos estables y no crea .devkit ni journal.
+
+### buscar
+
+Busqueda e identificacion unificada de solo lectura.
+
+```powershell
+dev buscar python
+dev buscar python --raiz C:\Notas --limite 5 --duplicados
+```
+
+Combina texto de notas, identificacion de archivos y duplicados. Con indice v2 activa la fuente workspace por defecto; `--sin-workspace` la desactiva y devuelve `workspace: null` sin error.
 
 ### nice
 

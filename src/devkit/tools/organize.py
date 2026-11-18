@@ -12,37 +12,37 @@ from devkit.core import workspace as modulo_workspace
 from devkit.errors import ErrorOrganizar
 
 # Carpetas que nunca entran en el plan, igual que en el resto del toolkit.
-CARPETAS_PROTEGIDAS = {'.git', '.devkit', '.idea', '.venv', '.vscode', 'src', 'tests'}
+CARPETAS_PROTEGIDAS = {".git", ".devkit", ".idea", ".venv", ".vscode", "src", "tests"}
 # Tabla de firmas binarias por magic number inicial y tipo.
 FIRMAS = (
-    (b'\xff\xd8\xff', 'imagen', '.jpg'),
-    (b'\x89PNG', 'imagen', '.png'),
-    (b'GIF8', 'imagen', '.gif'),
-    (b'%PDF-', 'documento', '.pdf'),
-    (b'PK\x03\x04', 'zip', '.zip'),
-    (b'\x1f\x8b', 'zip', '.gz'),
-    (b'ID3', 'audio', '.mp3'),
-    (b'\xff\xfb', 'audio', '.mp3'),
-    (b'OggS', 'audio', '.ogg'),
-    (b'\x00\x00\x00\x18ftyp', 'video', '.mp4'),
-    (b'\x00\x00\x00\x20ftyp', 'video', '.mp4'),
-    (b'RIFF', 'video', '.avi'),
-    (b'RIFF', 'audio', '.wav'),
-    (b'7z\xbc\xaf', 'zip', '.7z'),
-    (b'Rar!', 'zip', '.rar'),
-    (b'\x1aE\xdf\xa3', 'video', '.mkv'),
+    (b"\xff\xd8\xff", "imagen", ".jpg"),
+    (b"\x89PNG", "imagen", ".png"),
+    (b"GIF8", "imagen", ".gif"),
+    (b"%PDF-", "documento", ".pdf"),
+    (b"PK\x03\x04", "zip", ".zip"),
+    (b"\x1f\x8b", "zip", ".gz"),
+    (b"ID3", "audio", ".mp3"),
+    (b"\xff\xfb", "audio", ".mp3"),
+    (b"OggS", "audio", ".ogg"),
+    (b"\x00\x00\x00\x18ftyp", "video", ".mp4"),
+    (b"\x00\x00\x00\x20ftyp", "video", ".mp4"),
+    (b"RIFF", "video", ".avi"),
+    (b"RIFF", "audio", ".wav"),
+    (b"7z\xbc\xaf", "zip", ".7z"),
+    (b"Rar!", "zip", ".rar"),
+    (b"\x1aE\xdf\xa3", "video", ".mkv"),
 )
 # Tipos aceptados como nombre de carpeta por defecto.
-TIPOS = {'imagen', 'audio', 'video', 'documento', 'zip', 'otros'}
+TIPOS = {"imagen", "audio", "video", "documento", "zip", "otros"}
 
 
 def validar_raiz(raiz: Path | str) -> Path:
     # Comprueba que la raiz exista y que no sea una unidad completa.
     ruta = Path(raiz).expanduser().resolve()
     if not ruta.is_dir():
-        raise ErrorOrganizar(f'la raiz no existe o no es carpeta {ruta}')
+        raise ErrorOrganizar(f"la raiz no existe o no es carpeta {ruta}")
     if str(ruta) == str(ruta.anchor):
-        raise ErrorOrganizar(f'la raiz no puede ser la unidad completa {ruta}')
+        raise ErrorOrganizar(f"la raiz no puede ser la unidad completa {ruta}")
     return ruta
 
 
@@ -57,34 +57,34 @@ def detectar_tipo(ruta: Path) -> tuple[str, str]:
     # Lee los primeros bytes y cae a la extension si la firma no coincide.
     sufijo = ruta.suffix.lower()
     try:
-        with ruta.open('rb') as archivo:
+        with ruta.open("rb") as archivo:
             cabecera = archivo.read(16)
     except OSError:
-        cabecera = b''
+        cabecera = b""
     for firma, tipo, ext in FIRMAS:
         if cabecera.startswith(firma):
             # Formato real en el caso de RIFF necesita mirar dentro de la cabecera.
-            if firma == b'RIFF' and len(cabecera) >= 12:
+            if firma == b"RIFF" and len(cabecera) >= 12:
                 tipo_interno = cabecera[8:12]
-                if tipo_interno == b'WAVE':
-                    return 'audio', '.wav'
-                if tipo_interno == b'AVI ':
-                    return 'video', '.avi'
+                if tipo_interno == b"WAVE":
+                    return "audio", ".wav"
+                if tipo_interno == b"AVI ":
+                    return "video", ".avi"
             return tipo, ext
-    if sufijo in {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff'}:
-        return 'imagen', sufijo if sufijo != '.jpeg' else '.jpg'
-    if sufijo in {'.mp3', '.ogg', '.wav', '.flac', '.m4a'}:
-        return 'audio', sufijo
-    if sufijo in {'.mp4', '.mkv', '.avi', '.mov', '.webm'}:
-        return 'video', sufijo
-    if sufijo in {'.pdf', '.txt', '.md', '.csv', '.docx', '.xlsx', '.pptx', '.json'}:
-        return 'documento', sufijo
-    if sufijo in {'.zip', '.rar', '.7z', '.tar', '.gz'}:
-        return 'zip', sufijo
+    if sufijo in {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tif", ".tiff"}:
+        return "imagen", sufijo if sufijo != ".jpeg" else ".jpg"
+    if sufijo in {".mp3", ".ogg", ".wav", ".flac", ".m4a"}:
+        return "audio", sufijo
+    if sufijo in {".mp4", ".mkv", ".avi", ".mov", ".webm"}:
+        return "video", sufijo
+    if sufijo in {".pdf", ".txt", ".md", ".csv", ".docx", ".xlsx", ".pptx", ".json"}:
+        return "documento", sufijo
+    if sufijo in {".zip", ".rar", ".7z", ".tar", ".gz"}:
+        return "zip", sufijo
     if sufijo:
         # .txt y similares que no coinciden con firma caen a documento por extension.
-        return 'documento' if sufijo in {'.txt', '.md', '.csv', '.json'} else 'otros', sufijo
-    return 'otros', ''
+        return "documento" if sufijo in {".txt", ".md", ".csv", ".json"} else "otros", sufijo
+    return "otros", ""
 
 
 def anio_archivo(ruta: Path) -> str:
@@ -140,7 +140,7 @@ def construir_plan(raiz: Path, destino: Path, archivos: list[Path]) -> dict:
     ocupadas: set[str] = set()
     # Las ocupadas al inicio evitan pisar archivos ya organizados.
     if carpeta_destino.is_dir():
-        for ruta in carpeta_destino.rglob('*'):
+        for ruta in carpeta_destino.rglob("*"):
             if ruta.is_file():
                 ocupadas.add(str(ruta).lower())
     acciones = []
@@ -154,50 +154,50 @@ def construir_plan(raiz: Path, destino: Path, archivos: list[Path]) -> dict:
         while str(candidato).lower() in ocupadas or candidato.exists():
             # Consigue el stem sin la ultima extension para mantener formato.
             base_nombre = ruta.stem
-            candidato = carpeta_destino / anio / tipo / f'{base_nombre}_{contador}{ruta.suffix}'
+            candidato = carpeta_destino / anio / tipo / f"{base_nombre}_{contador}{ruta.suffix}"
             contador += 1
         ocupadas.add(str(candidato).lower())
         acciones.append(
             {
-                'tipo': 'mover',
-                'origen': str(ruta),
-                'destino': str(candidato),
-                'anio': anio,
-                'extension_tipo': tipo,
-                'extension_real': ext,
-                'nombre': ruta.relative_to(base).as_posix(),
+                "tipo": "mover",
+                "origen": str(ruta),
+                "destino": str(candidato),
+                "anio": anio,
+                "extension_tipo": tipo,
+                "extension_real": ext,
+                "nombre": ruta.relative_to(base).as_posix(),
             }
         )
     por_tipo: dict[str, int] = {}
     por_anio: dict[str, int] = {}
     for accion in acciones:
-        por_tipo[accion['extension_tipo']] = por_tipo.get(accion['extension_tipo'], 0) + 1
-        por_anio[accion['anio']] = por_anio.get(accion['anio'], 0) + 1
+        por_tipo[accion["extension_tipo"]] = por_tipo.get(accion["extension_tipo"], 0) + 1
+        por_anio[accion["anio"]] = por_anio.get(accion["anio"], 0) + 1
     total_bytes = sum(
-        Path(a['origen']).stat().st_size for a in acciones if Path(a['origen']).exists()
+        Path(a["origen"]).stat().st_size for a in acciones if Path(a["origen"]).exists()
     )
     manifest = []
     for a in acciones:
-        ruta = Path(a['origen'])
+        ruta = Path(a["origen"])
         datos = ruta.stat() if ruta.exists() else None
         manifest.append(
             {
-                'origen': a['origen'],
-                'destino': a['destino'],
-                'tipo': 'mover',
-                'tamano': datos.st_size if datos else 0,
-                'mtime': datos.st_mtime if datos else 0,
-                'hash': safety.hash_contenido(ruta) if (datos and ruta.exists()) else None,
+                "origen": a["origen"],
+                "destino": a["destino"],
+                "tipo": "mover",
+                "tamano": datos.st_size if datos else 0,
+                "mtime": datos.st_mtime if datos else 0,
+                "hash": safety.hash_contenido(ruta) if (datos and ruta.exists()) else None,
             }
         )
     return {
-        'acciones': acciones,
-        'manifest': manifest,
-        'total': len(acciones),
-        'total_bytes': total_bytes,
-        'por_tipo': dict(sorted(por_tipo.items())),
-        'por_anio': dict(sorted(por_anio.items())),
-        'destino': str(carpeta_destino),
+        "acciones": acciones,
+        "manifest": manifest,
+        "total": len(acciones),
+        "total_bytes": total_bytes,
+        "por_tipo": dict(sorted(por_tipo.items())),
+        "por_anio": dict(sorted(por_anio.items())),
+        "destino": str(carpeta_destino),
     }
 
 
@@ -210,27 +210,27 @@ def analizar_organize(
     # Analisis puro de organizacion, sin persistir manifiesto ni journal.
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
-    carpeta_destino = Path(destino).expanduser().resolve() if destino else base / 'Organizados'
+    carpeta_destino = Path(destino).expanduser().resolve() if destino else base / "Organizados"
     if str(carpeta_destino) == str(base):
-        carpeta_destino = base / 'Organizados'
+        carpeta_destino = base / "Organizados"
     archivos = recolectar_archivos(base, ignorar_onedrive, edad_dias)
     archivos = [ruta for ruta in archivos if carpeta_destino not in ruta.resolve().parents]
     plan = construir_plan(base, carpeta_destino, archivos)
     return {
-        'herramienta': 'organize',
-        'accion': 'analizar',
-        'manifest': plan['manifest'],
-        'estado': 'correcto',
-        'codigo': 0,
-        'raiz': str(base),
-        'destino': str(carpeta_destino),
-        'total_archivos': len(archivos),
-        'total': plan['total'],
-        'total_bytes': plan['total_bytes'],
-        'por_tipo': plan['por_tipo'],
-        'por_anio': plan['por_anio'],
-        'acciones': plan['acciones'],
-        'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
+        "herramienta": "organize",
+        "accion": "analizar",
+        "manifest": plan["manifest"],
+        "estado": "correcto",
+        "codigo": 0,
+        "raiz": str(base),
+        "destino": str(carpeta_destino),
+        "total_archivos": len(archivos),
+        "total": plan["total"],
+        "total_bytes": plan["total_bytes"],
+        "por_tipo": plan["por_tipo"],
+        "por_anio": plan["por_anio"],
+        "acciones": plan["acciones"],
+        "duracion_ms": round((time.perf_counter() - inicio) * 1000, 1),
     }
 
 
@@ -242,20 +242,27 @@ def escanear_organize(
 ) -> dict:
     # Construye el plan, guarda su manifiesto persistente y registra el escaneo.
     analisis = analizar_organize(raiz, destino, edad_dias, ignorar_onedrive)
-    base = Path(analisis['raiz'])
+    base = Path(analisis["raiz"])
     inicio = time.perf_counter()
-    id_ejec = runlog.iniciar_ejecucion('organize', 'plan', espacio_trabajo=str(base))
+    id_ejec = runlog.iniciar_ejecucion("organize", "plan", espacio_trabajo=str(base))
     wid = modulo_workspace.workspace_id(base)
     ruta_plan = safety.guardar_plan(
-        id_ejec, 'organize', analisis['manifest'], workspace_id=wid, workspace_root=str(base)
+        id_ejec, "organize", analisis["manifest"], workspace_id=wid, workspace_root=str(base)
     )
     runlog.registrar_ejecucion(
-        'organize', ['plan'], inicio, 0, 0, 'plan',
-        espacio_trabajo=str(base), id_plan=id_ejec, id_ejecucion=id_ejec,
+        "organize",
+        ["plan"],
+        inicio,
+        0,
+        0,
+        "plan",
+        espacio_trabajo=str(base),
+        id_plan=id_ejec,
+        id_ejecucion=id_ejec,
     )
     resultado = dict(analisis)
-    resultado['accion'] = 'plan'
-    resultado['plan_persistente'] = str(ruta_plan)
+    resultado["accion"] = "plan"
+    resultado["plan_persistente"] = str(ruta_plan)
     return resultado
 
 
@@ -272,25 +279,25 @@ def _confirmar(accion: dict, siempre: bool) -> bool:
         respuesta = input().strip().lower()
     except (EOFError, KeyboardInterrupt):
         return False
-    if respuesta in {'s', 'si', 'y', 'yes'}:
+    if respuesta in {"s", "si", "y", "yes"}:
         return True
-    if respuesta == 't':
+    if respuesta == "t":
         # Escribe en el estado compartido del caller mediante propiedad.
-        accion['_todos'] = True
+        accion["_todos"] = True
         return True
-    return respuesta != 'a'
+    return respuesta != "a"
 
 
 def _autorizar_por_archivo(siempre: bool):
     # Hook de autorizacion del ejecutor unico que delega cada paso en _confirmar.
-    estado = {'siempre': siempre}
+    estado = {"siempre": siempre}
 
     def autorizar(accion: dict) -> bool:
         pregunta = dict(accion)
-        respuesta = _confirmar(pregunta, estado['siempre'])
-        if pregunta.get('_todos'):
+        respuesta = _confirmar(pregunta, estado["siempre"])
+        if pregunta.get("_todos"):
             # La respuesta t del usuario cambia el resto de la tanda a aceptadas.
-            estado['siempre'] = True
+            estado["siempre"] = True
         return respuesta
 
     return autorizar
@@ -310,74 +317,77 @@ def aplicar_organize(
 ) -> dict:
     # Aplica (o simula) un manifiesto por el ejecutor unico, sin reescanear si ya existe.
     if not dry_run:
-        safety.verificar_escritura('organizar archivos')
+        safety.verificar_escritura("organizar archivos")
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
-    carpeta_destino = Path(destino).expanduser().resolve() if destino else base / 'Organizados'
+    carpeta_destino = Path(destino).expanduser().resolve() if destino else base / "Organizados"
     if str(carpeta_destino) == str(base):
-        carpeta_destino = base / 'Organizados'
+        carpeta_destino = base / "Organizados"
     if por_archivo and not todos and not dry_run:
         import sys
 
         if not sys.stdin.isatty():
-            raise ErrorOrganizar('sin --todos ni tty no se puede confirmar archivo por archivo')
+            raise ErrorOrganizar("sin --todos ni tty no se puede confirmar archivo por archivo")
     ruta_plan = Path(plan_persistente).expanduser().resolve() if plan_persistente else None
     if ruta_plan is not None and not ruta_plan.is_file():
-        raise ErrorOrganizar(f'no existe el plan {ruta_plan}')
+        raise ErrorOrganizar(f"no existe el plan {ruta_plan}")
     if reanudar and ruta_plan is None:
-        raise ErrorOrganizar('reanudar exige un plan persistente con --plan')
+        raise ErrorOrganizar("reanudar exige un plan persistente con --plan")
     seleccion = tuple(
-        nombre
-        for nombre, activo in (('todos', todos), ('por-archivo', por_archivo))
-        if activo
+        nombre for nombre, activo in (("todos", todos), ("por-archivo", por_archivo)) if activo
     )
-    permiso = modulo_politica.derivar(
-        'organize', 'aplicar', confirmada=confirmar, flags=seleccion
-    )
+    permiso = modulo_politica.derivar("organize", "aplicar", confirmada=confirmar, flags=seleccion)
     acciones = None
     if ruta_plan is None and dry_run:
         archivos = recolectar_archivos(base, ignorar_onedrive, edad_dias)
         archivos = [ruta for ruta in archivos if carpeta_destino not in ruta.resolve().parents]
         plan_local = construir_plan(base, carpeta_destino, archivos)
-        acciones = plan_local['manifest']
+        acciones = plan_local["manifest"]
     if ruta_plan is None and not dry_run:
         escaneo = escanear_organize(base, destino, edad_dias, ignorar_onedrive)
-        ruta_plan = Path(escaneo['plan_persistente'])
+        ruta_plan = Path(escaneo["plan_persistente"])
     autorizar = None if (todos or dry_run) else _autorizar_por_archivo(False)
     if dry_run:
         if acciones is not None:
             resultado = safety._simular_acciones(
-                acciones, 'organize', base, autorizar=autorizar, politica=permiso
+                acciones, "organize", base, autorizar=autorizar, politica=permiso
             )
         else:
             resultado = safety.simular_manifiesto(
-                ruta_plan, 'organize', espacio_trabajo=str(base),
-                autorizar=autorizar, politica=permiso,
+                ruta_plan,
+                "organize",
+                espacio_trabajo=str(base),
+                autorizar=autorizar,
+                politica=permiso,
             )
     else:
         resultado = safety.aplicar_manifiesto(
-            ruta_plan, 'organize', espacio_trabajo=str(base),
-            autorizar=autorizar, reanudar=reanudar, politica=permiso,
+            ruta_plan,
+            "organize",
+            espacio_trabajo=str(base),
+            autorizar=autorizar,
+            reanudar=reanudar,
+            politica=permiso,
         )
-    movidos = resultado['movidos']
-    fallidos = resultado['fallidos']
-    estado = 'simulado' if dry_run else ('correcto' if not fallidos else 'error')
+    movidos = resultado["movidos"]
+    fallidos = resultado["fallidos"]
+    estado = "simulado" if dry_run else ("correcto" if not fallidos else "error")
     return {
-        'herramienta': 'organize',
-        'accion': 'aplicar',
-        'estado': estado,
-        'codigo': resultado['codigo'],
-        'raiz': str(base),
-        'destino': str(carpeta_destino),
-        'total_movidos': len(movidos),
-        'total_bytes': sum(int(a.get('tamano', 0)) for a in movidos),
-        'movidos': movidos,
-        'fallidos': fallidos,
-        'estado_plan': resultado['estado_plan'],
-        'id_ejecucion': resultado['id_ejecucion'],
-        'plan_persistente': str(ruta_plan) if ruta_plan is not None else '',
-        'fecha': datetime.now(UTC).isoformat(),
-        'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
-        'dry_run': dry_run,
-        'estado_identidad': resultado.get('estado_identidad', 'sin_identidad'),
+        "herramienta": "organize",
+        "accion": "aplicar",
+        "estado": estado,
+        "codigo": resultado["codigo"],
+        "raiz": str(base),
+        "destino": str(carpeta_destino),
+        "total_movidos": len(movidos),
+        "total_bytes": sum(int(a.get("tamano", 0)) for a in movidos),
+        "movidos": movidos,
+        "fallidos": fallidos,
+        "estado_plan": resultado["estado_plan"],
+        "id_ejecucion": resultado["id_ejecucion"],
+        "plan_persistente": str(ruta_plan) if ruta_plan is not None else "",
+        "fecha": datetime.now(UTC).isoformat(),
+        "duracion_ms": round((time.perf_counter() - inicio) * 1000, 1),
+        "dry_run": dry_run,
+        "estado_identidad": resultado.get("estado_identidad", "sin_identidad"),
     }

@@ -14,19 +14,19 @@ from devkit.errors import ErrorLimpieza
 
 # Carpetas que se consideran limpiables por defecto en cualquier proyecto.
 CARPETAS_LIMPIABLES = {
-    '.mypy_cache',
-    '.pytest_cache',
-    '.ruff_cache',
-    '__pycache__',
-    'build',
-    'dist',
-    'htmlcov',
-    'node_modules',
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "__pycache__",
+    "build",
+    "dist",
+    "htmlcov",
+    "node_modules",
 }
 # Carpetas que nunca entran en el plan, aunque el usuario las pida por error.
-CARPETAS_PROTEGIDAS = {'.git', '.devkit', '.idea', '.venv', '.vscode', 'src', 'tests'}
+CARPETAS_PROTEGIDAS = {".git", ".devkit", ".idea", ".venv", ".vscode", "src", "tests"}
 # Sufijos de archivo que se consideran artefactos generados.
-SUFIJOS_TEMPORALES = {'.log', '.pyc', '.pyo', '.tmp'}
+SUFIJOS_TEMPORALES = {".log", ".pyc", ".pyo", ".tmp"}
 # Tropieza por defecto para no mover mas de esto en una sola pasada.
 TOPE_BYTES = 512 * 1024 * 1024
 
@@ -35,9 +35,9 @@ def validar_raiz(raiz: Path | str) -> Path:
     # Comprueba que la raiz exista y que no sea una unidad completa.
     ruta = Path(raiz).expanduser().resolve()
     if not ruta.is_dir():
-        raise ErrorLimpieza(f'la raiz no existe o no es carpeta {ruta}')
+        raise ErrorLimpieza(f"la raiz no existe o no es carpeta {ruta}")
     if str(ruta) == str(ruta.anchor):
-        raise ErrorLimpieza(f'la raiz no puede ser la unidad completa {ruta}')
+        raise ErrorLimpieza(f"la raiz no puede ser la unidad completa {ruta}")
     return ruta
 
 
@@ -79,7 +79,7 @@ def escanear(raiz: Path, incluir_venv: bool = False, edad_dias: int = 7) -> list
     base = validar_raiz(raiz)
     permitidas = set(CARPETAS_LIMPIABLES)
     if incluir_venv:
-        permitidas.add('.venv')
+        permitidas.add(".venv")
     corte = time.time() - edad_dias * 86400
     candidatos: list[dict] = []
     for carpeta, subcarpetas, archivos in os.walk(base, followlinks=False):
@@ -90,13 +90,13 @@ def escanear(raiz: Path, incluir_venv: bool = False, edad_dias: int = 7) -> list
             ruta_sub = ruta_carpeta / nombre
             if ruta_sub.is_symlink() or ruta_sub.is_junction():
                 continue
-            if nombre in CARPETAS_PROTEGIDAS and not (incluir_venv and nombre == '.venv'):
+            if nombre in CARPETAS_PROTEGIDAS and not (incluir_venv and nombre == ".venv"):
                 continue
             conservadas.append(nombre)
         subcarpetas[:] = conservadas
         partes = ruta_carpeta.relative_to(base).parts
         dentro_protegida = bool(partes) and any(p in CARPETAS_PROTEGIDAS for p in partes)
-        if dentro_protegida and not (ruta_carpeta.name == '.venv' and incluir_venv):
+        if dentro_protegida and not (ruta_carpeta.name == ".venv" and incluir_venv):
             continue
         if ruta_carpeta.name in permitidas:
             try:
@@ -106,10 +106,10 @@ def escanear(raiz: Path, incluir_venv: bool = False, edad_dias: int = 7) -> list
             if modificado < corte:
                 candidatos.append(
                     {
-                        'ruta': str(ruta_carpeta),
-                        'tipo': 'carpeta',
-                        'motivo': f'cache {ruta_carpeta.name}',
-                        'tamano': calcular_tamano(ruta_carpeta),
+                        "ruta": str(ruta_carpeta),
+                        "tipo": "carpeta",
+                        "motivo": f"cache {ruta_carpeta.name}",
+                        "tamano": calcular_tamano(ruta_carpeta),
                     }
                 )
             # Al marcar la carpeta entera no se recorre su interior.
@@ -129,43 +129,43 @@ def escanear(raiz: Path, incluir_venv: bool = False, edad_dias: int = 7) -> list
                 continue
             candidatos.append(
                 {
-                    'ruta': str(ruta),
-                    'tipo': 'archivo',
-                    'motivo': f'temporal {ruta.suffix.lower()}',
-                    'tamano': ruta.stat().st_size,
+                    "ruta": str(ruta),
+                    "tipo": "archivo",
+                    "motivo": f"temporal {ruta.suffix.lower()}",
+                    "tamano": ruta.stat().st_size,
                 }
             )
-    candidatos.sort(key=lambda item: item['ruta'])
+    candidatos.sort(key=lambda item: item["ruta"])
     return candidatos
 
 
 def construir_plan(candidatos: list[dict], tope: int = TOPE_BYTES) -> dict:
     # Ordena por tamano descendente y corta cuando se alcanza el tope.
-    ordenados = sorted(candidatos, key=lambda item: item['tamano'], reverse=True)
+    ordenados = sorted(candidatos, key=lambda item: item["tamano"], reverse=True)
     seleccion = []
     total = 0
     for candidato in ordenados:
-        if total + candidato['tamano'] > tope:
+        if total + candidato["tamano"] > tope:
             continue
         seleccion.append(candidato)
-        total += candidato['tamano']
+        total += candidato["tamano"]
     candidatos = []
     for a in seleccion:
-        fila = {'origen': a['ruta'], 'destino': '', 'tipo': 'papelera', 'tamano': a['tamano']}
-        if a['tipo'] == 'archivo':
+        fila = {"origen": a["ruta"], "destino": "", "tipo": "papelera", "tamano": a["tamano"]}
+        if a["tipo"] == "archivo":
             with suppress(OSError):
-                fila['mtime'] = Path(a['ruta']).stat().st_mtime
-                fila['hash'] = safety.hash_contenido(Path(a['ruta']))
+                fila["mtime"] = Path(a["ruta"]).stat().st_mtime
+                fila["hash"] = safety.hash_contenido(Path(a["ruta"]))
         else:
             with suppress(OSError):
-                fila['hash'] = safety.hash_arbol(Path(a['ruta']))
+                fila["hash"] = safety.hash_arbol(Path(a["ruta"]))
         candidatos.append(fila)
     return {
-        'acciones': seleccion,
-        'manifest': candidatos,
-        'total': len(seleccion),
-        'total_bytes': total,
-        'omitidos': len(ordenados) - len(seleccion),
+        "acciones": seleccion,
+        "manifest": candidatos,
+        "total": len(seleccion),
+        "total_bytes": total,
+        "omitidos": len(ordenados) - len(seleccion),
     }
 
 
@@ -175,27 +175,34 @@ def escanear_trim(raiz: Path, incluir_venv: bool = False, edad_dias: int = 7) ->
     base = validar_raiz(raiz)
     candidatos = escanear(base, incluir_venv, edad_dias)
     plan = construir_plan(candidatos)
-    id_ejec = runlog.iniciar_ejecucion('trim', 'escanear', espacio_trabajo=str(base))
+    id_ejec = runlog.iniciar_ejecucion("trim", "escanear", espacio_trabajo=str(base))
     wid = modulo_workspace.workspace_id(base)
     ruta_plan = safety.guardar_plan(
-        id_ejec, 'trim', plan['manifest'], workspace_id=wid, workspace_root=str(base)
+        id_ejec, "trim", plan["manifest"], workspace_id=wid, workspace_root=str(base)
     )
     runlog.registrar_ejecucion(
-        'trim', ['escanear'], inicio, 0, 0, 'escanear',
-        espacio_trabajo=str(base), id_plan=id_ejec, id_ejecucion=id_ejec,
+        "trim",
+        ["escanear"],
+        inicio,
+        0,
+        0,
+        "escanear",
+        espacio_trabajo=str(base),
+        id_plan=id_ejec,
+        id_ejecucion=id_ejec,
     )
     return {
-        'herramienta': 'trim',
-        'accion': 'escanear',
-        'estado': 'correcto',
-        'codigo': 0,
-        'raiz': str(base),
-        'total': plan['total'],
-        'total_bytes': plan['total_bytes'],
-        'omitidos': plan['omitidos'],
-        'acciones': plan['acciones'],
-        'plan_persistente': str(ruta_plan),
-        'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
+        "herramienta": "trim",
+        "accion": "escanear",
+        "estado": "correcto",
+        "codigo": 0,
+        "raiz": str(base),
+        "total": plan["total"],
+        "total_bytes": plan["total_bytes"],
+        "omitidos": plan["omitidos"],
+        "acciones": plan["acciones"],
+        "plan_persistente": str(ruta_plan),
+        "duracion_ms": round((time.perf_counter() - inicio) * 1000, 1),
     }
 
 
@@ -210,56 +217,59 @@ def aplicar_trim(
 ) -> dict:
     # Aplica un manifiesto por el ejecutor unico, sin reescanear si ya existe.
     if not dry_run:
-        safety.verificar_escritura('limpiar caches')
+        safety.verificar_escritura("limpiar caches")
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
     ruta_plan = Path(plan).expanduser().resolve() if plan is not None else None
     if ruta_plan is not None and not ruta_plan.is_file():
-        raise ErrorLimpieza(f'no existe el plan {ruta_plan}')
+        raise ErrorLimpieza(f"no existe el plan {ruta_plan}")
     if reanudar and ruta_plan is None:
-        raise ErrorLimpieza('reanudar exige un plan persistente con --plan')
-    permiso = modulo_politica.derivar('trim', 'aplicar', forzada=forzar)
+        raise ErrorLimpieza("reanudar exige un plan persistente con --plan")
+    permiso = modulo_politica.derivar("trim", "aplicar", forzada=forzar)
     acciones = None
     if ruta_plan is None:
         if dry_run:
             candidatos = escanear(base, incluir_venv, edad_dias)
             plan_obj = construir_plan(candidatos)
-            acciones = plan_obj['manifest']
+            acciones = plan_obj["manifest"]
         else:
             escaneo = escanear_trim(base, incluir_venv, edad_dias)
-            ruta_plan = Path(escaneo['plan_persistente'])
+            ruta_plan = Path(escaneo["plan_persistente"])
             acciones = None
     if dry_run:
         if acciones is not None:
             resultado = safety._simular_acciones(
-                acciones, 'trim', base, autorizar=None, politica=permiso
+                acciones, "trim", base, autorizar=None, politica=permiso
             )
         else:
             resultado = safety.simular_manifiesto(
-                ruta_plan, 'trim', espacio_trabajo=str(base), politica=permiso
+                ruta_plan, "trim", espacio_trabajo=str(base), politica=permiso
             )
     else:
         resultado = safety.aplicar_manifiesto(
-            ruta_plan, 'trim', espacio_trabajo=str(base), reanudar=reanudar,
+            ruta_plan,
+            "trim",
+            espacio_trabajo=str(base),
+            reanudar=reanudar,
             politica=permiso,
         )
-    estado = 'simulado' if dry_run else ('correcto' if not resultado['fallidos'] else 'error')
-    movidos = resultado['movidos']
+    estado = "simulado" if dry_run else ("correcto" if not resultado["fallidos"] else "error")
+    movidos = resultado["movidos"]
     return {
-        'herramienta': 'trim',
-        'accion': 'aplicar',
-        'estado': estado,
-        'codigo': resultado['codigo'],
-        'raiz': str(base),
-        'total_movidos': len(movidos),
-        'total_bytes': sum(int(a.get('tamano', 0)) for a in movidos),
-        'movidos': movidos,
-        'fallidos': resultado['fallidos'],
-        'estado_plan': resultado['estado_plan'],
-        'id_ejecucion': resultado['id_ejecucion'],
-        'plan_persistente': str(ruta_plan) if ruta_plan is not None else '',
-        'fecha': datetime.now(UTC).isoformat(),
-        'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
-        'dry_run': dry_run,
-        'estado_identidad': resultado.get('estado_identidad', 'sin_identidad'),
+        "herramienta": "trim",
+        "accion": "aplicar",
+        "estado": estado,
+        "codigo": resultado["codigo"],
+        "raiz": str(base),
+        "total_movidos": len(movidos),
+        "total_bytes": sum(int(a.get("tamano", 0)) for a in movidos),
+        "movidos": movidos,
+        "fallidos": resultado["fallidos"],
+        "estado_plan": resultado["estado_plan"],
+        "id_ejecucion": resultado["id_ejecucion"],
+        "plan_persistente": str(ruta_plan) if ruta_plan is not None else "",
+        "fecha": datetime.now(UTC).isoformat(),
+        "duracion_ms": round((time.perf_counter() - inicio) * 1000, 1),
+        "dry_run": dry_run,
+        "estado_identidad": resultado.get("estado_identidad", "sin_identidad"),
     }

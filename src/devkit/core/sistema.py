@@ -20,18 +20,18 @@ def rutas_largas_habilitadas() -> bool:
         import winreg
     except ImportError:
         return False
-    ruta = r'SYSTEM\CurrentControlSet\Control\FileSystem'
+    ruta = r"SYSTEM\CurrentControlSet\Control\FileSystem"
     try:
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, ruta) as clave:
-            valor, _ = winreg.QueryValueEx(clave, 'LongPathsEnabled')
+            valor, _ = winreg.QueryValueEx(clave, "LongPathsEnabled")
     except OSError:
         return False
     return bool(valor)
 
 
 def descripcion_sistema() -> str:
-    return f'{platform.system()} {platform.release()} {platform.version()}'.strip()
+    return f"{platform.system()} {platform.release()} {platform.version()}".strip()
 
 
 def nombre_equipo() -> str:
-    return os.environ.get('COMPUTERNAME', platform.node())
+    return os.environ.get("COMPUTERNAME", platform.node())

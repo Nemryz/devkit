@@ -20,7 +20,7 @@ class ResultadoProceso:
 
 class _LimiteJob:
     # Encapsula el Job Object y permite cerrarlo de forma explicita.
-    __slots__ = ('handle',)
+    __slots__ = ("handle",)
 
     def __init__(self, handle):
         self.handle = handle
@@ -55,27 +55,27 @@ class _InfosLimite:
 
         class LimitInfo(c.Structure):
             _fields_ = [
-                ('PerProcessUserTimeLimit', c.c_int64),
-                ('PerJobUserTimeLimit', c.c_int64),
-                ('LimitFlags', c.c_uint32),
-                ('MinimumWorkingSetSize', c.c_size_t),
-                ('MaximumWorkingSetSize', c.c_size_t),
-                ('ActiveProcessLimit', c.c_uint32),
-                ('Affinity', c.c_uint64),
-                ('PriorityClass', c.c_uint32),
-                ('SchedulingClass', c.c_uint32),
+                ("PerProcessUserTimeLimit", c.c_int64),
+                ("PerJobUserTimeLimit", c.c_int64),
+                ("LimitFlags", c.c_uint32),
+                ("MinimumWorkingSetSize", c.c_size_t),
+                ("MaximumWorkingSetSize", c.c_size_t),
+                ("ActiveProcessLimit", c.c_uint32),
+                ("Affinity", c.c_uint64),
+                ("PriorityClass", c.c_uint32),
+                ("SchedulingClass", c.c_uint32),
             ]
 
         class Extend(c.Structure):
             _fields_ = [
-                ('BasicLimitInformation', LimitInfo),
-                ('IoInfo', c.c_int64 * 3),
-                ('ProcessMemoryLimit', c.c_size_t),
-                ('JobMemoryLimit', c.c_size_t),
-                ('PeakProcessMemoryUsed', c.c_size_t),
-                ('PeakJobMemoryUsed', c.c_size_t),
-                ('UiRestrictionsClass', c.c_uint32),
-                ('__relleno', c.c_uint32),
+                ("BasicLimitInformation", LimitInfo),
+                ("IoInfo", c.c_int64 * 3),
+                ("ProcessMemoryLimit", c.c_size_t),
+                ("JobMemoryLimit", c.c_size_t),
+                ("PeakProcessMemoryUsed", c.c_size_t),
+                ("PeakJobMemoryUsed", c.c_size_t),
+                ("UiRestrictionsClass", c.c_uint32),
+                ("__relleno", c.c_uint32),
             ]
 
         limite = LimitInfo()
@@ -93,27 +93,27 @@ class _InfosLimite:
 
         class LimitInfo(c.Structure):
             _fields_ = [
-                ('PerProcessUserTimeLimit', c.c_int64),
-                ('PerJobUserTimeLimit', c.c_int64),
-                ('LimitFlags', c.c_uint32),
-                ('MinimumWorkingSetSize', c.c_size_t),
-                ('MaximumWorkingSetSize', c.c_size_t),
-                ('ActiveProcessLimit', c.c_uint32),
-                ('Affinity', c.c_uint64),
-                ('PriorityClass', c.c_uint32),
-                ('SchedulingClass', c.c_uint32),
+                ("PerProcessUserTimeLimit", c.c_int64),
+                ("PerJobUserTimeLimit", c.c_int64),
+                ("LimitFlags", c.c_uint32),
+                ("MinimumWorkingSetSize", c.c_size_t),
+                ("MaximumWorkingSetSize", c.c_size_t),
+                ("ActiveProcessLimit", c.c_uint32),
+                ("Affinity", c.c_uint64),
+                ("PriorityClass", c.c_uint32),
+                ("SchedulingClass", c.c_uint32),
             ]
 
         class Extend(c.Structure):
             _fields_ = [
-                ('BasicLimitInformation', LimitInfo),
-                ('IoInfo', c.c_int64 * 3),
-                ('ProcessMemoryLimit', c.c_size_t),
-                ('JobMemoryLimit', c.c_size_t),
-                ('PeakProcessMemoryUsed', c.c_size_t),
-                ('PeakJobMemoryUsed', c.c_size_t),
-                ('UiRestrictionsClass', c.c_uint32),
-                ('__relleno', c.c_uint32),
+                ("BasicLimitInformation", LimitInfo),
+                ("IoInfo", c.c_int64 * 3),
+                ("ProcessMemoryLimit", c.c_size_t),
+                ("JobMemoryLimit", c.c_size_t),
+                ("PeakProcessMemoryUsed", c.c_size_t),
+                ("PeakJobMemoryUsed", c.c_size_t),
+                ("UiRestrictionsClass", c.c_uint32),
+                ("__relleno", c.c_uint32),
             ]
 
         limite = LimitInfo()
@@ -126,7 +126,7 @@ class _InfosLimite:
 def _hacer_job_limite(memoria_maxima: int | None) -> _LimiteJob | None:
     import ctypes as c
 
-    if not hasattr(c, 'windll'):
+    if not hasattr(c, "windll"):
         return None
     kernel = c.windll.kernel32
     kernel.CreateJobObjectW.restype = c.c_void_p
@@ -155,7 +155,7 @@ def crear_job_limite(memoria_maxima: int | None) -> _LimiteJob | None:
 
 def _aplicar_prioridad(pid: int, prioridad: str) -> None:
     # Aplica la clase de Windows al hijo sin tocar el proceso actual.
-    resto = {'idle': psutil.IDLE_PRIORITY_CLASS, 'bajo': psutil.BELOW_NORMAL_PRIORITY_CLASS}
+    resto = {"idle": psutil.IDLE_PRIORITY_CLASS, "bajo": psutil.BELOW_NORMAL_PRIORITY_CLASS}
     valor = resto.get(prioridad.lower(), psutil.BELOW_NORMAL_PRIORITY_CLASS)
     psutil.Process(pid).nice(valor)
 
@@ -170,21 +170,21 @@ def ejecutar(comando: list[str], timeout: float = 60.0) -> ResultadoProceso:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            encoding='utf-8',
-            errors='replace',
+            encoding="utf-8",
+            errors="replace",
         )
         psutil.Process(proceso.pid).nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
         salida, error = proceso.communicate(timeout=timeout)
     except FileNotFoundError as fallo:
-        raise ErrorProceso(f'no se encontro el ejecutable {comando[0]}') from fallo
+        raise ErrorProceso(f"no se encontro el ejecutable {comando[0]}") from fallo
     except subprocess.TimeoutExpired as fallo:
         if proceso is not None:
             proceso.kill()
-        raise ErrorProceso(f'el proceso supero {timeout} segundos') from fallo
+        raise ErrorProceso(f"el proceso supero {timeout} segundos") from fallo
     duracion = round((time.perf_counter() - inicio) * 1000, 1)
     return ResultadoProceso(
         codigo=proceso.returncode,
-        salida=salida or '',
-        error=error or '',
+        salida=salida or "",
+        error=error or "",
         duracion_ms=duracion,
     )

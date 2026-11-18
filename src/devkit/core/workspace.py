@@ -9,9 +9,9 @@ from pathlib import Path
 
 from devkit.errors import ErrorIntegridad
 
-NOMBRE_CARPETA = '.devkit'
-NOMBRE_ARCHIVO = 'workspace'
-NOMBRE_REGISTRO = 'workspaces.json'
+NOMBRE_CARPETA = ".devkit"
+NOMBRE_ARCHIVO = "workspace"
+NOMBRE_REGISTRO = "workspaces.json"
 
 
 def carpeta_devkit(raiz: Path) -> Path:
@@ -29,21 +29,21 @@ def leer_id(raiz: Path) -> str | None:
     if not archivo.is_file():
         return None
     try:
-        datos = json.loads(archivo.read_text(encoding='utf-8'))
+        datos = json.loads(archivo.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as fallo:
         raise ErrorIntegridad(
-            f'el identificador del workspace en {archivo} esta corrupto: {fallo}'
+            f"el identificador del workspace en {archivo} esta corrupto: {fallo}"
         ) from fallo
-    ident = datos.get('workspace_id') if isinstance(datos, dict) else None
+    ident = datos.get("workspace_id") if isinstance(datos, dict) else None
     if not isinstance(ident, str) or not ident:
         raise ErrorIntegridad(
-            f'el identificador del workspace en {archivo} esta corrupto: falta workspace_id'
+            f"el identificador del workspace en {archivo} esta corrupto: falta workspace_id"
         )
     try:
         uuid.UUID(ident)
     except ValueError as fallo:
         raise ErrorIntegridad(
-            f'el identificador del workspace en {archivo} esta corrupto: {fallo}'
+            f"el identificador del workspace en {archivo} esta corrupto: {fallo}"
         ) from fallo
     return ident
 
@@ -60,7 +60,7 @@ def workspace_id(raiz: Path) -> str:
     archivo = carpeta / NOMBRE_ARCHIVO
     nuevo = str(uuid.uuid4())
     archivo.write_text(
-        json.dumps({'workspace_id': nuevo}, ensure_ascii=False, indent=2), encoding='utf-8'
+        json.dumps({"workspace_id": nuevo}, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return nuevo
 
@@ -81,20 +81,20 @@ def _ruta_registro() -> Path:
 def _cargar_registro() -> dict:
     ruta = _ruta_registro()
     if not ruta.is_file():
-        return {'version': 1, 'workspaces': {}}
+        return {"version": 1, "workspaces": {}}
     try:
-        datos = json.loads(ruta.read_text(encoding='utf-8'))
+        datos = json.loads(ruta.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return {'version': 1, 'workspaces': {}}
-    if not isinstance(datos, dict) or 'workspaces' not in datos:
-        return {'version': 1, 'workspaces': {}}
+        return {"version": 1, "workspaces": {}}
+    if not isinstance(datos, dict) or "workspaces" not in datos:
+        return {"version": 1, "workspaces": {}}
     return datos
 
 
 def _guardar_registro(datos: dict) -> None:
     ruta = _ruta_registro()
-    temporal = ruta.with_suffix('.tmp')
-    temporal.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding='utf-8')
+    temporal = ruta.with_suffix(".tmp")
+    temporal.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(str(temporal), str(ruta))
 
 
@@ -109,25 +109,25 @@ def registrar(raiz: Path) -> str | None:
     ruta_norm = _ruta_normalizada(base)
     ahora = datetime.now(UTC).isoformat()
     registro = _cargar_registro()
-    workspaces = registro.setdefault('workspaces', {})
-    entrada = workspaces.setdefault(ident, {'roots': [], 'first_seen': ahora, 'shared': False})
-    raices = entrada.setdefault('roots', [])
+    workspaces = registro.setdefault("workspaces", {})
+    entrada = workspaces.setdefault(ident, {"roots": [], "first_seen": ahora, "shared": False})
+    raices = entrada.setdefault("roots", [])
     # Comprobar si ya se vio bajo otra raiz normalizada.
-    raices_existentes = {r.get('path', '') for r in raices}
+    raices_existentes = {r.get("path", "") for r in raices}
     if ruta_norm not in raices_existentes and raices_existentes:
-        entrada['shared'] = True
+        entrada["shared"] = True
     # Actualizar o añadir la raiz.
     encontrada = False
     for r in raices:
-        if r.get('path') == ruta_norm:
-            r['last_seen'] = ahora
+        if r.get("path") == ruta_norm:
+            r["last_seen"] = ahora
             encontrada = True
             break
     if not encontrada:
-        raices.append({'path': ruta_norm, 'last_seen': ahora})
+        raices.append({"path": ruta_norm, "last_seen": ahora})
     # Limitar a las ultimas 8 raices por identificador.
     if len(raices) > 8:
-        raices.sort(key=lambda x: x.get('last_seen', ''))
+        raices.sort(key=lambda x: x.get("last_seen", ""))
         del raices[:-8]
     _guardar_registro(registro)
     return ident
@@ -139,10 +139,10 @@ def es_compartido(raiz: Path) -> bool:
     if ident is None:
         return False
     registro = _cargar_registro()
-    entrada = registro.get('workspaces', {}).get(ident)
+    entrada = registro.get("workspaces", {}).get(ident)
     if not isinstance(entrada, dict):
         return False
-    return bool(entrada.get('shared', False))
+    return bool(entrada.get("shared", False))
 
 
 def misma_identidad(raiz_a: Path, raiz_b: Path) -> bool:
@@ -162,4 +162,3 @@ def esta_contenida(raiz: Path, ruta: Path) -> bool:
     except ValueError:
         return False
     return True
-

@@ -14,7 +14,7 @@ def resumen_memoria():
     psutil = cargar_psutil()
     memoria = psutil.virtual_memory()
     return {
-        'total_gb': round(memoria.total / (1024**3), 2),
-        'disponible_gb': round(memoria.available / (1024**3), 2),
-        'uso_pct': memoria.percent,
+        "total_gb": round(memoria.total / (1024**3), 2),
+        "disponible_gb": round(memoria.available / (1024**3), 2),
+        "uso_pct": memoria.percent,
     }

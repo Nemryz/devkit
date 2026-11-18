@@ -61,3 +61,7 @@ class ErrorIndex(ErrorBase):
 
 class ErrorOCR(ErrorBase):
     pass
+
+
+class ErrorWorkspace(ErrorBase):
+    pass

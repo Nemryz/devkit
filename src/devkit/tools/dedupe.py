@@ -12,7 +12,7 @@ from devkit.core import workspace as modulo_workspace
 from devkit.errors import ErrorDuplicados
 
 # Carpetas que nunca entran en el escaneo, igual que en trim.
-CARPETAS_PROTEGIDAS = {'.git', '.devkit', '.idea', '.venv', '.vscode', 'src', 'tests'}
+CARPETAS_PROTEGIDAS = {".git", ".devkit", ".idea", ".venv", ".vscode", "src", "tests"}
 # Tropieza por defecto para no mover mas de esto en una sola pasada.
 TOPE_BYTES = 1024 * 1024 * 1024
 # Primeros bytes que se leen para el pre hash parcial.
@@ -25,9 +25,9 @@ def validar_raiz(raiz: Path | str) -> Path:
     # Comprueba que la raiz exista y que no sea una unidad completa.
     ruta = Path(raiz).expanduser().resolve()
     if not ruta.is_dir():
-        raise ErrorDuplicados(f'la raiz no existe o no es carpeta {ruta}')
+        raise ErrorDuplicados(f"la raiz no existe o no es carpeta {ruta}")
     if str(ruta) == str(ruta.anchor):
-        raise ErrorDuplicados(f'la raiz no puede ser la unidad completa {ruta}')
+        raise ErrorDuplicados(f"la raiz no puede ser la unidad completa {ruta}")
     return ruta
 
 
@@ -41,7 +41,7 @@ def _esta_protegida(raiz: Path, ruta: Path) -> bool:
 def _extension(ruta: Path) -> str:
     # Normaliza la extension para agrupar el ahorro por tipo en el resumen.
     sufijo = ruta.suffix.lower()
-    return sufijo if sufijo else 'sin extension'
+    return sufijo if sufijo else "sin extension"
 
 
 def _crear_hasher():
@@ -55,10 +55,10 @@ def prehash(ruta: Path) -> str:
     # Calcula el hash de los primeros bytes para descartar falsos positivos.
     hasher = _crear_hasher()
     try:
-        with ruta.open('rb') as archivo:
+        with ruta.open("rb") as archivo:
             bloque = archivo.read(PREHASH_BYTES)
     except OSError as fallo:
-        raise ErrorDuplicados(f'no se puede leer {ruta} porque {fallo}') from fallo
+        raise ErrorDuplicados(f"no se puede leer {ruta} porque {fallo}") from fallo
     hasher.update(bloque)
     return hasher.hexdigest()
 
@@ -67,14 +67,14 @@ def hash_completo(ruta: Path) -> str:
     # Calcula el hash completo por bloques para confirmar duplicados exactos.
     hasher = _crear_hasher()
     try:
-        with ruta.open('rb') as archivo:
+        with ruta.open("rb") as archivo:
             while True:
                 bloque = archivo.read(BLOQUE_HASH)
                 if not bloque:
                     break
                 hasher.update(bloque)
     except OSError as fallo:
-        raise ErrorDuplicados(f'no se puede leer {ruta} porque {fallo}') from fallo
+        raise ErrorDuplicados(f"no se puede leer {ruta} porque {fallo}") from fallo
     return hasher.hexdigest()
 
 
@@ -164,17 +164,17 @@ def construir_grupos(archivos: list[Path]) -> list[dict]:
                 ahorro = tamano * len(duplicados)
                 grupos.append(
                     {
-                        'hash': digest,
-                        'prehash': pre,
-                        'extension': _extension(guardar),
-                        'conservar': str(guardar),
-                        'duplicados': duplicados,
-                        'total_copias': len(lista_hash),
-                        'tamano': tamano,
-                        'ahorro_bytes': ahorro,
+                        "hash": digest,
+                        "prehash": pre,
+                        "extension": _extension(guardar),
+                        "conservar": str(guardar),
+                        "duplicados": duplicados,
+                        "total_copias": len(lista_hash),
+                        "tamano": tamano,
+                        "ahorro_bytes": ahorro,
                     }
                 )
-    grupos.sort(key=lambda grupo: (-grupo['ahorro_bytes'], grupo['hash']))
+    grupos.sort(key=lambda grupo: (-grupo["ahorro_bytes"], grupo["hash"]))
     return grupos
 
 
@@ -185,17 +185,17 @@ def construir_plan(grupos: list[dict], tope: int = TOPE_BYTES) -> dict:
     omitidos = 0
     por_extension: dict[str, dict] = {}
     for grupo in grupos:
-        ext = grupo['extension']
+        ext = grupo["extension"]
         if ext not in por_extension:
-            por_extension[ext] = {'extension': ext, 'grupos': 0, 'ahorro_bytes': 0, 'copias': 0}
-        por_extension[ext]['grupos'] += 1
-        por_extension[ext]['copias'] += grupo['total_copias']
-        por_extension[ext]['ahorro_bytes'] += grupo['ahorro_bytes']
-        for ruta in grupo['duplicados']:
-            if total + grupo['tamano'] > tope:
+            por_extension[ext] = {"extension": ext, "grupos": 0, "ahorro_bytes": 0, "copias": 0}
+        por_extension[ext]["grupos"] += 1
+        por_extension[ext]["copias"] += grupo["total_copias"]
+        por_extension[ext]["ahorro_bytes"] += grupo["ahorro_bytes"]
+        for ruta in grupo["duplicados"]:
+            if total + grupo["tamano"] > tope:
                 omitidos += 1
                 continue
-            total += grupo['tamano']
+            total += grupo["tamano"]
             try:
                 modificado = Path(ruta).stat().st_mtime
             except OSError:
@@ -206,22 +206,22 @@ def construir_plan(grupos: list[dict], tope: int = TOPE_BYTES) -> dict:
                 firma_contenido = None
             acciones.append(
                 {
-                    'tipo': 'papelera',
-                    'origen': ruta,
-                    'conservar': grupo['conservar'],
-                    'tamano': grupo['tamano'],
-                    'mtime': modificado,
-                    'hash': firma_contenido,
-                    'extension': ext,
+                    "tipo": "papelera",
+                    "origen": ruta,
+                    "conservar": grupo["conservar"],
+                    "tamano": grupo["tamano"],
+                    "mtime": modificado,
+                    "hash": firma_contenido,
+                    "extension": ext,
                 }
             )
-    resumen = sorted(por_extension.values(), key=lambda item: -item['ahorro_bytes'])
+    resumen = sorted(por_extension.values(), key=lambda item: -item["ahorro_bytes"])
     return {
-        'acciones': acciones,
-        'total': len(acciones),
-        'total_bytes': total,
-        'omitidos': omitidos,
-        'resumen_extension': resumen,
+        "acciones": acciones,
+        "total": len(acciones),
+        "total_bytes": total,
+        "omitidos": omitidos,
+        "resumen_extension": resumen,
     }
 
 
@@ -238,20 +238,20 @@ def analizar_dedupe(
     grupos = construir_grupos(archivos)
     plan = construir_plan(grupos, tope)
     return {
-        'herramienta': 'dedupe',
-        'accion': 'analizar',
-        'estado': 'correcto',
-        'codigo': 0,
-        'raiz': str(base),
-        'total_archivos': len(archivos),
-        'total_grupos': len(grupos),
-        'total': plan['total'],
-        'total_bytes': plan['total_bytes'],
-        'omitidos': plan['omitidos'],
-        'resumen_extension': plan['resumen_extension'],
-        'grupos': grupos,
-        'acciones': plan['acciones'],
-        'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
+        "herramienta": "dedupe",
+        "accion": "analizar",
+        "estado": "correcto",
+        "codigo": 0,
+        "raiz": str(base),
+        "total_archivos": len(archivos),
+        "total_grupos": len(grupos),
+        "total": plan["total"],
+        "total_bytes": plan["total_bytes"],
+        "omitidos": plan["omitidos"],
+        "resumen_extension": plan["resumen_extension"],
+        "grupos": grupos,
+        "acciones": plan["acciones"],
+        "duracion_ms": round((time.perf_counter() - inicio) * 1000, 1),
     }
 
 
@@ -263,20 +263,27 @@ def escanear_dedupe(
 ) -> dict:
     # Construye el plan, guarda su manifiesto persistente y registra el escaneo.
     analisis = analizar_dedupe(raiz, edad_dias, ignorar_onedrive, tope)
-    base = Path(analisis['raiz'])
+    base = Path(analisis["raiz"])
     inicio = time.perf_counter()
-    id_ejec = runlog.iniciar_ejecucion('dedupe', 'escanear', espacio_trabajo=str(base))
+    id_ejec = runlog.iniciar_ejecucion("dedupe", "escanear", espacio_trabajo=str(base))
     wid = modulo_workspace.workspace_id(base)
     ruta_plan = safety.guardar_plan(
-        id_ejec, 'dedupe', analisis['acciones'], workspace_id=wid, workspace_root=str(base)
+        id_ejec, "dedupe", analisis["acciones"], workspace_id=wid, workspace_root=str(base)
     )
     runlog.registrar_ejecucion(
-        'dedupe', ['escanear'], inicio, 0, 0, 'escanear',
-        espacio_trabajo=str(base), id_plan=id_ejec, id_ejecucion=id_ejec,
+        "dedupe",
+        ["escanear"],
+        inicio,
+        0,
+        0,
+        "escanear",
+        espacio_trabajo=str(base),
+        id_plan=id_ejec,
+        id_ejecucion=id_ejec,
     )
     resultado = dict(analisis)
-    resultado['accion'] = 'escanear'
-    resultado['plan_persistente'] = str(ruta_plan)
+    resultado["accion"] = "escanear"
+    resultado["plan_persistente"] = str(ruta_plan)
     return resultado
 
 
@@ -292,55 +299,58 @@ def aplicar_dedupe(
 ) -> dict:
     # Aplica (o simula) un manifiesto por el ejecutor unico, sin reescanear si ya existe.
     if not dry_run:
-        safety.verificar_escritura('mover duplicados')
+        safety.verificar_escritura("mover duplicados")
     inicio = time.perf_counter()
     base = validar_raiz(raiz)
     ruta_plan = Path(plan).expanduser().resolve() if plan is not None else None
     if ruta_plan is not None and not ruta_plan.is_file():
-        raise ErrorDuplicados(f'no existe el plan {ruta_plan}')
+        raise ErrorDuplicados(f"no existe el plan {ruta_plan}")
     if reanudar and ruta_plan is None:
-        raise ErrorDuplicados('reanudar exige un plan persistente con --plan')
-    permiso = modulo_politica.derivar('dedupe', 'aplicar', forzada=forzar)
+        raise ErrorDuplicados("reanudar exige un plan persistente con --plan")
+    permiso = modulo_politica.derivar("dedupe", "aplicar", forzada=forzar)
     acciones = None
     if ruta_plan is None and dry_run:
         archivos = recolectar_archivos(base, ignorar_onedrive, edad_dias)
         grupos = construir_grupos(archivos)
         plan_obj = construir_plan(grupos, tope)
-        acciones = plan_obj['acciones']
+        acciones = plan_obj["acciones"]
     if ruta_plan is None and not dry_run:
         escaneo = escanear_dedupe(base, edad_dias, ignorar_onedrive, tope)
-        ruta_plan = Path(escaneo['plan_persistente'])
+        ruta_plan = Path(escaneo["plan_persistente"])
     if dry_run:
         if acciones is not None:
             resultado = safety._simular_acciones(
-                acciones, 'dedupe', base, autorizar=None, politica=permiso
+                acciones, "dedupe", base, autorizar=None, politica=permiso
             )
         else:
             resultado = safety.simular_manifiesto(
-                ruta_plan, 'dedupe', espacio_trabajo=str(base), politica=permiso
+                ruta_plan, "dedupe", espacio_trabajo=str(base), politica=permiso
             )
     else:
         resultado = safety.aplicar_manifiesto(
-            ruta_plan, 'dedupe', espacio_trabajo=str(base), reanudar=reanudar,
+            ruta_plan,
+            "dedupe",
+            espacio_trabajo=str(base),
+            reanudar=reanudar,
             politica=permiso,
         )
-    movidos = resultado['movidos']
-    estado = 'simulado' if dry_run else ('correcto' if not resultado['fallidos'] else 'error')
+    movidos = resultado["movidos"]
+    estado = "simulado" if dry_run else ("correcto" if not resultado["fallidos"] else "error")
     return {
-        'herramienta': 'dedupe',
-        'accion': 'aplicar',
-        'estado': estado,
-        'codigo': resultado['codigo'],
-        'raiz': str(base),
-        'total_movidos': len(movidos),
-        'total_bytes': sum(int(a.get('tamano', 0)) for a in movidos),
-        'movidos': movidos,
-        'fallidos': resultado['fallidos'],
-        'estado_plan': resultado['estado_plan'],
-        'id_ejecucion': resultado['id_ejecucion'],
-        'plan_persistente': str(ruta_plan) if ruta_plan is not None else '',
-        'fecha': datetime.now(UTC).isoformat(),
-        'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
-        'dry_run': dry_run,
-        'estado_identidad': resultado.get('estado_identidad', 'sin_identidad'),
+        "herramienta": "dedupe",
+        "accion": "aplicar",
+        "estado": estado,
+        "codigo": resultado["codigo"],
+        "raiz": str(base),
+        "total_movidos": len(movidos),
+        "total_bytes": sum(int(a.get("tamano", 0)) for a in movidos),
+        "movidos": movidos,
+        "fallidos": resultado["fallidos"],
+        "estado_plan": resultado["estado_plan"],
+        "id_ejecucion": resultado["id_ejecucion"],
+        "plan_persistente": str(ruta_plan) if ruta_plan is not None else "",
+        "fecha": datetime.now(UTC).isoformat(),
+        "duracion_ms": round((time.perf_counter() - inicio) * 1000, 1),
+        "dry_run": dry_run,
+        "estado_identidad": resultado.get("estado_identidad", "sin_identidad"),
     }

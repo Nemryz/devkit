@@ -10,7 +10,7 @@ from pathlib import Path
 
 from devkit.core import paths
 
-ESTADOS_ABIERTOS = {'PENDING', 'RUNNING'}
+ESTADOS_ABIERTOS = {"PENDING", "RUNNING"}
 
 
 def _ahora() -> str:
@@ -19,23 +19,23 @@ def _ahora() -> str:
 
 def ruta_journal() -> Path:
     # Ruta unica del journal transaccional y del resumen antiguo.
-    return paths.asegurar_directorio(paths.directorio_journal()) / 'ejecuciones.jsonl'
+    return paths.asegurar_directorio(paths.directorio_journal()) / "ejecuciones.jsonl"
 
 
-def espacio_heredado(espacio_trabajo: str = '') -> str:
+def espacio_heredado(espacio_trabajo: str = "") -> str:
     # Toda operacion hereda su espacio de trabajo del entorno si nadie lo aporta.
     if espacio_trabajo:
         return espacio_trabajo
     activo = paths.workspace_activo()
-    return str(activo) if activo else ''
+    return str(activo) if activo else ""
 
 
 def _agregar(ruta: Path, registro: dict) -> None:
     # Escribe por descriptor con cerrojo de proceso para que los hermanos se pongan en cola.
-    linea = (json.dumps(registro, ensure_ascii=False) + '\n').encode('utf-8')
+    linea = (json.dumps(registro, ensure_ascii=False) + "\n").encode("utf-8")
     ruta.parent.mkdir(parents=True, exist_ok=True)
     descriptor = os.open(
-        str(ruta), os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, 'O_BINARY', 0)
+        str(ruta), os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, "O_BINARY", 0)
     )
     try:
         con_cerrojo = False
@@ -51,7 +51,7 @@ def _agregar(ruta: Path, registro: dict) -> None:
             os.lseek(descriptor, 0, os.SEEK_END)
             escrito = os.write(descriptor, linea)
             if escrito != len(linea):
-                raise OSError('escritura incompleta en el journal')
+                raise OSError("escritura incompleta en el journal")
         finally:
             if con_cerrojo:
                 import msvcrt
@@ -70,33 +70,33 @@ def registrar_hito(
     herramienta: str,
     accion: str,
     estado: str,
-    detalle: str = '',
-    origen: str = '',
-    destino: str = '',
+    detalle: str = "",
+    origen: str = "",
+    destino: str = "",
     codigo: int | None = None,
-    codigo_error: str = '',
-    espacio_trabajo: str = '',
-    id_plan: str = '',
-    nivel: str = 'ejecucion',
+    codigo_error: str = "",
+    espacio_trabajo: str = "",
+    id_plan: str = "",
+    nivel: str = "ejecucion",
     politica: dict | None = None,
 ) -> Path:
     # Escribe una linea JSON con el estado de una accion concreta.
     registro = {
-        'fecha': _ahora(),
-        'id_ejecucion': id_ejecucion,
-        'herramienta': herramienta,
-        'accion': accion,
-        'estado': estado,
-        'detalle': detalle,
-        'origen': origen,
-        'destino': destino,
-        'codigo': codigo,
-        'codigo_error': codigo_error,
-        'espacio_trabajo': espacio_heredado(espacio_trabajo),
-        'id_plan': id_plan,
-        'pid': os.getpid(),
-        'nivel': nivel,
-        'politica': politica or {},
+        "fecha": _ahora(),
+        "id_ejecucion": id_ejecucion,
+        "herramienta": herramienta,
+        "accion": accion,
+        "estado": estado,
+        "detalle": detalle,
+        "origen": origen,
+        "destino": destino,
+        "codigo": codigo,
+        "codigo_error": codigo_error,
+        "espacio_trabajo": espacio_heredado(espacio_trabajo),
+        "id_plan": id_plan,
+        "pid": os.getpid(),
+        "nivel": nivel,
+        "politica": politica or {},
     }
     _agregar(ruta_journal(), registro)
     return ruta_journal()
@@ -105,18 +105,18 @@ def registrar_hito(
 def iniciar_ejecucion(
     herramienta: str,
     accion: str,
-    espacio_trabajo: str = '',
-    id_plan: str = '',
+    espacio_trabajo: str = "",
+    id_plan: str = "",
     politica: dict | None = None,
 ) -> str:
     # Crea un id unico y escribe el hito PENDING de la ejecucion.
-    id_ejecucion = f'{herramienta}-{uuid.uuid4().hex[:8]}'
+    id_ejecucion = f"{herramienta}-{uuid.uuid4().hex[:8]}"
     registrar_hito(
         id_ejecucion,
         herramienta,
         accion,
-        'PENDING',
-        'inicio',
+        "PENDING",
+        "inicio",
         espacio_trabajo=espacio_trabajo,
         id_plan=id_plan,
         politica=politica,
@@ -130,9 +130,9 @@ def cerrar_ejecucion(
     accion: str,
     estado: str,
     codigo: int,
-    detalle: str = '',
-    espacio_trabajo: str = '',
-    id_plan: str = '',
+    detalle: str = "",
+    espacio_trabajo: str = "",
+    id_plan: str = "",
     politica: dict | None = None,
 ) -> Path:
     # Cierra con RUNNING, COMPLETED, FAILED o INTERRUPTED.
@@ -155,35 +155,35 @@ def registrar_ejecucion(
     inicio: float,
     codigo: int,
     memoria_pico: int,
-    detalle: str = '',
-    espacio_trabajo: str = '',
-    id_plan: str = '',
-    id_ejecucion: str = '',
+    detalle: str = "",
+    espacio_trabajo: str = "",
+    id_plan: str = "",
+    id_ejecucion: str = "",
     politica: dict | None = None,
 ) -> Path:
     # Cierra con el id ya iniciado o abre y cierra su propia ejecucion coherente.
     ident = id_ejecucion or iniciar_ejecucion(
         herramienta,
-        argumentos[0] if argumentos else 'ejecutar',
+        argumentos[0] if argumentos else "ejecutar",
         espacio_trabajo=espacio_trabajo,
         id_plan=id_plan,
         politica=politica,
     )
-    estado = 'COMPLETED' if codigo == 0 else 'FAILED'
+    estado = "COMPLETED" if codigo == 0 else "FAILED"
     registro = {
-        'fecha': _ahora(),
-        'id_ejecucion': ident,
-        'herramienta': herramienta,
-        'argumentos': argumentos,
-        'duracion_ms': round((time.perf_counter() - inicio) * 1000, 1),
-        'codigo': codigo,
-        'memoria_pico': memoria_pico,
-        'detalle': detalle,
-        'estado': estado,
-        'espacio_trabajo': espacio_heredado(espacio_trabajo),
-        'id_plan': id_plan,
-        'pid': os.getpid(),
-        'politica': politica or {},
+        "fecha": _ahora(),
+        "id_ejecucion": ident,
+        "herramienta": herramienta,
+        "argumentos": argumentos,
+        "duracion_ms": round((time.perf_counter() - inicio) * 1000, 1),
+        "codigo": codigo,
+        "memoria_pico": memoria_pico,
+        "detalle": detalle,
+        "estado": estado,
+        "espacio_trabajo": espacio_heredado(espacio_trabajo),
+        "id_plan": id_plan,
+        "pid": os.getpid(),
+        "politica": politica or {},
     }
     _agregar(ruta_journal(), registro)
     return ruta_journal()
@@ -194,7 +194,7 @@ def _ultimos_registros(ruta: Path, incluir_acciones: bool = True) -> dict[str, d
     ultimos: dict[str, dict] = {}
     if not ruta.exists():
         return ultimos
-    with ruta.open('r', encoding='utf-8', errors='replace') as archivo:
+    with ruta.open("r", encoding="utf-8", errors="replace") as archivo:
         for linea in archivo:
             if not linea.strip():
                 continue
@@ -202,10 +202,10 @@ def _ultimos_registros(ruta: Path, incluir_acciones: bool = True) -> dict[str, d
                 datos = json.loads(linea)
             except json.JSONDecodeError:
                 continue
-            if not incluir_acciones and datos.get('nivel') == 'accion':
+            if not incluir_acciones and datos.get("nivel") == "accion":
                 continue
-            ident = datos.get('id_ejecucion')
-            if ident and datos.get('estado'):
+            ident = datos.get("id_ejecucion")
+            if ident and datos.get("estado"):
                 ultimos[ident] = datos
     return ultimos
 
@@ -213,7 +213,7 @@ def _ultimos_registros(ruta: Path, incluir_acciones: bool = True) -> dict[str, d
 def ejecuciones_abiertas() -> list[dict]:
     # Devuelve las ejecuciones cuyo ultimo hito de nivel ejecucion sigue abierto.
     ultimos = _ultimos_registros(paths.ruta_journal(), incluir_acciones=False)
-    return [datos for datos in ultimos.values() if datos.get('estado') in ESTADOS_ABIERTOS]
+    return [datos for datos in ultimos.values() if datos.get("estado") in ESTADOS_ABIERTOS]
 
 
 def ultima_accion_del_id(id_ejecucion: str) -> dict | None:
@@ -222,7 +222,7 @@ def ultima_accion_del_id(id_ejecucion: str) -> dict | None:
     if not ruta.exists():
         return None
     ultima = None
-    with ruta.open('r', encoding='utf-8', errors='replace') as archivo:
+    with ruta.open("r", encoding="utf-8", errors="replace") as archivo:
         for linea in archivo:
             if not linea.strip():
                 continue
@@ -230,7 +230,7 @@ def ultima_accion_del_id(id_ejecucion: str) -> dict | None:
                 datos = json.loads(linea)
             except json.JSONDecodeError:
                 continue
-            if datos.get('id_ejecucion') == id_ejecucion and datos.get('nivel') == 'accion':
+            if datos.get("id_ejecucion") == id_ejecucion and datos.get("nivel") == "accion":
                 ultima = datos
     return ultima
 
@@ -241,7 +241,7 @@ def hitos_del_plan(id_plan: str) -> list[dict]:
     if not ruta.exists() or not id_plan:
         return []
     hitos: list[dict] = []
-    with ruta.open('r', encoding='utf-8', errors='replace') as archivo:
+    with ruta.open("r", encoding="utf-8", errors="replace") as archivo:
         for linea in archivo:
             if not linea.strip():
                 continue
@@ -249,7 +249,7 @@ def hitos_del_plan(id_plan: str) -> list[dict]:
                 datos = json.loads(linea)
             except json.JSONDecodeError:
                 continue
-            if datos.get('nivel') == 'accion' and datos.get('id_plan') == id_plan:
+            if datos.get("nivel") == "accion" and datos.get("id_plan") == id_plan:
                 hitos.append(datos)
     return hitos
 
@@ -259,21 +259,21 @@ def recuperar_interrumpidas() -> list[str]:
     abiertas = ejecuciones_abiertas()
     recuperadas = []
     for datos in abiertas:
-        accion_final = ultima_accion_del_id(datos.get('id_ejecucion', ''))
-        movimiento = str(accion_final.get('origen', '')) if accion_final else ''
-        detalle = 'recuperada al comprobar el journal'
+        accion_final = ultima_accion_del_id(datos.get("id_ejecucion", ""))
+        movimiento = str(accion_final.get("origen", "")) if accion_final else ""
+        detalle = "recuperada al comprobar el journal"
         if movimiento:
-            detalle = f'recuperada al comprobar el journal, ultima accion {movimiento}'
+            detalle = f"recuperada al comprobar el journal, ultima accion {movimiento}"
         registrar_hito(
-            datos.get('id_ejecucion', ''),
-            datos.get('herramienta', 'desconocida'),
-            datos.get('accion', ''),
-            'INTERRUPTED',
+            datos.get("id_ejecucion", ""),
+            datos.get("herramienta", "desconocida"),
+            datos.get("accion", ""),
+            "INTERRUPTED",
             detalle,
-            espacio_trabajo=str(datos.get('espacio_trabajo', '')),
-            id_plan=str(datos.get('id_plan', '')),
+            espacio_trabajo=str(datos.get("espacio_trabajo", "")),
+            id_plan=str(datos.get("id_plan", "")),
         )
-        recuperadas.append(datos.get('id_ejecucion', ''))
+        recuperadas.append(datos.get("id_ejecucion", ""))
     return recuperadas
 
 
@@ -283,7 +283,7 @@ def contar_ejecuciones() -> int:
     if not ruta.exists():
         return 0
     total = 0
-    with ruta.open('r', encoding='utf-8', errors='replace') as archivo:
+    with ruta.open("r", encoding="utf-8", errors="replace") as archivo:
         for linea in archivo:
             if linea.strip():
                 try:
@@ -291,8 +291,8 @@ def contar_ejecuciones() -> int:
                 except json.JSONDecodeError:
                     continue
                 # Los hitos por accion no son ejecuciones, no los cuentes.
-                if datos.get('nivel') == 'accion':
+                if datos.get("nivel") == "accion":
                     continue
-                if datos.get('estado') not in ESTADOS_ABIERTOS:
+                if datos.get("estado") not in ESTADOS_ABIERTOS:
                     total += 1
     return total

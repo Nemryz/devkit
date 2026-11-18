@@ -6,7 +6,7 @@ from devkit.tools import ocr
 
 SIN_TESSERACT = pytest.mark.skipif(
     ocr._tesseract() is None,
-    reason='Tesseract no disponible en este entorno',
+    reason="Tesseract no disponible en este entorno",
 )
 
 
